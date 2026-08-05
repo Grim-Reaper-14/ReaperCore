@@ -91,6 +91,7 @@ namespace reapercore
         Lua_Runtime_Context m_context;
         std::shared_ptr<Lua_Runtime_Interface> m_runtime;
         mutable std::mutex m_mutex;
+        mutable std::mutex m_runtime_mutex;
         std::vector<Lua_Script_Entry> m_scripts;
         bool m_initialized{};
     };

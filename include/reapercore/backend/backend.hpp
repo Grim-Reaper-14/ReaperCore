@@ -1,5 +1,9 @@
 #pragma once
 
+#include "reapercore/backend/d3d12/d3d12_backend.hpp"
+#include "reapercore/backend/hooking/hook_registry.hpp"
+#include "reapercore/backend/renderer/renderer.hpp"
+
 #include <atomic>
 #include <chrono>
 
@@ -21,11 +25,17 @@ namespace reapercore
         void shutdown() noexcept;
 
         [[nodiscard]] bool running() const noexcept;
+        [[nodiscard]] D3D12_Backend& d3d12() noexcept;
+        [[nodiscard]] Renderer& renderer() noexcept;
+        [[nodiscard]] Hook_Registry& hooks() noexcept;
 
     private:
         Logging_Manager* m_logging{};
         Settings_System_Manager* m_settings{};
         ReaperCore_Lua_System* m_lua{};
+        D3D12_Backend m_d3d12;
+        Renderer m_renderer;
+        Hook_Registry m_hooks;
         std::atomic_bool m_running{false};
         std::chrono::milliseconds m_tick_interval{50};
     };

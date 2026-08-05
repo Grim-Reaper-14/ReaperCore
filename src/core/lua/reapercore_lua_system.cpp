@@ -4,6 +4,8 @@
 #include "reapercore/core/logging/logging_manager.hpp"
 #include "reapercore/core/settings_system/settings_system_manager.hpp"
 
+#include <utility>
+
 namespace reapercore
 {
     bool ReaperCore_Lua_System::initialize(
@@ -12,6 +14,9 @@ namespace reapercore
         Settings_System_Manager& settings,
         Logging_Manager& logging)
     {
+        if (m_initialized)
+            return true;
+
         m_enabled = settings.get_bool("lua.enabled", true);
         if (!m_enabled)
         {
@@ -26,7 +31,10 @@ namespace reapercore
         context.data_directory = folders.lua_data();
 
         if (!m_manager.initialize(files, logging, std::move(context)))
+        {
+            m_enabled = false;
             return false;
+        }
 
         if (settings.get_bool("lua.auto_scan", true))
             static_cast<void>(m_manager.discover_scripts());
@@ -46,8 +54,11 @@ namespace reapercore
     {
         if (!m_initialized)
             return;
+
         if (m_enabled)
             m_manager.shutdown();
+
+        m_enabled = false;
         m_initialized = false;
     }
 

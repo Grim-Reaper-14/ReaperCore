@@ -113,11 +113,10 @@ namespace reapercore
                 std::string name,
                 std::source_location source) noexcept;
             ~Scoped_Timer();
-
-            Scoped_Timer(const Scoped_Timer&) = delete;
-            Scoped_Timer& operator=(const Scoped_Timer&) = delete;
             Scoped_Timer(Scoped_Timer&& other) noexcept;
             Scoped_Timer& operator=(Scoped_Timer&& other) noexcept;
+            Scoped_Timer(const Scoped_Timer&) = delete;
+            Scoped_Timer& operator=(const Scoped_Timer&) = delete;
 
         private:
             Logging_Manager* m_manager{};
@@ -134,11 +133,10 @@ namespace reapercore
                 Logging_Manager& manager,
                 std::initializer_list<Log_Field> fields);
             ~Scoped_Context();
-
-            Scoped_Context(const Scoped_Context&) = delete;
-            Scoped_Context& operator=(const Scoped_Context&) = delete;
             Scoped_Context(Scoped_Context&& other) noexcept;
             Scoped_Context& operator=(Scoped_Context&& other) noexcept;
+            Scoped_Context(const Scoped_Context&) = delete;
+            Scoped_Context& operator=(const Scoped_Context&) = delete;
 
         private:
             Logging_Manager* m_manager{};
@@ -147,7 +145,6 @@ namespace reapercore
 
         Logging_Manager() = default;
         ~Logging_Manager();
-
         Logging_Manager(const Logging_Manager&) = delete;
         Logging_Manager& operator=(const Logging_Manager&) = delete;
 
@@ -163,34 +160,22 @@ namespace reapercore
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
 
-        void trace(
-            std::string_view channel,
-            std::string_view message,
+        void trace(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
-        void debug(
-            std::string_view channel,
-            std::string_view message,
+        void debug(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
-        void info(
-            std::string_view channel,
-            std::string_view message,
+        void info(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
-        void warning(
-            std::string_view channel,
-            std::string_view message,
+        void warning(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
-        void error(
-            std::string_view channel,
-            std::string_view message,
+        void error(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
-        void critical(
-            std::string_view channel,
-            std::string_view message,
+        void critical(std::string_view channel, std::string_view message,
             std::initializer_list<Log_Field> fields = {},
             std::source_location source = std::source_location::current());
 
@@ -199,7 +184,6 @@ namespace reapercore
             const std::exception& exception,
             std::string_view message = "Unhandled exception",
             std::source_location source = std::source_location::current());
-
         void hexdump(
             std::string_view channel,
             std::string_view label,
@@ -222,7 +206,6 @@ namespace reapercore
 
         [[nodiscard]] Listener_Token add_listener(Listener listener);
         [[nodiscard]] bool remove_listener(Listener_Token token);
-
         [[nodiscard]] std::vector<Log_Record> recent_records(
             std::size_t maximum_records = 0) const;
         [[nodiscard]] Logging_Metrics metrics() const;

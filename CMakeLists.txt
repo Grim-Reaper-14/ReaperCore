@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ReaperCore VERSION 0.2.0 LANGUAGES CXX)
+project(ReaperCore VERSION 0.3.0 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "ReaperCore currently supports Windows only.")
@@ -11,14 +11,16 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 add_library(ReaperCore SHARED
-    src/application.cpp
-    src/backend.cpp
-    src/core.cpp
-    src/dllmain.cpp
-    src/file_system_manager.cpp
-    src/folder_system_manager.cpp
-    src/logger.cpp
-    src/settings_system_manager.cpp
+    src/bootstrap/dllmain.cpp
+    src/core/application/application.cpp
+    src/core/core/core.cpp
+    src/core/file_system/file_system_manager.cpp
+    src/core/folder_system/folder_system_manager.cpp
+    src/core/logging/logging_manager.cpp
+    src/core/lua/lua_core_manager.cpp
+    src/core/lua/reapercore_lua_system.cpp
+    src/core/settings_system/settings_system_manager.cpp
+    src/backend/backend.cpp
 )
 
 target_include_directories(ReaperCore

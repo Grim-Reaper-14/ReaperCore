@@ -1,12 +1,15 @@
 # ReaperCore
 
-Clean Windows x64 C++20 DLL foundation.
+Clean Windows x64 C++20 foundation organized into strict subsystem folders.
 
-## Requirements
+## Source domains
 
-- Windows 10 or newer
-- Visual Studio 2022 with Desktop development with C++
-- CMake 3.24 or newer
+- `core` owns lifecycle, files, folders, settings, logging, and Lua orchestration.
+- `backend` owns the runtime service loop.
+- `frontend` is reserved for the menu and UI files supplied later.
+- `bootstrap` contains only the Windows DLL entry point.
+
+See `docs/ARCHITECTURE.md` for the complete ownership rules.
 
 ## Build
 
@@ -21,12 +24,12 @@ Output:
 build\bin\Release\ReaperCore.dll
 ```
 
-## Runtime
+Press `END` to request a clean unload.
 
-When the DLL loads, it opens a console and writes a log to:
+Runtime data is created under:
 
 ```text
-%APPDATA%\ReaperCore\ReaperCore.log
+%APPDATA%\ReaperCore
 ```
 
-Press `END` to request a clean unload.
+The Lua interfaces are present, but no Lua engine dependency is linked yet.

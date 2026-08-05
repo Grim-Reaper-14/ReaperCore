@@ -10,7 +10,9 @@ namespace reapercore
     DWORD Application::run()
     {
         if (!m_core.initialize())
-            return ERROR_INITIALIZATION_FAILED;
+        {
+            return ERROR_DLL_INIT_FAILED;
+        }
 
         m_core.logging().info("application", "ReaperCore loaded successfully.");
         m_core.logging().info("application", "Press END to unload cleanly.");

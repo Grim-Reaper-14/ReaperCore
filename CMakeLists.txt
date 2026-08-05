@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ReaperCore VERSION 0.1.0 LANGUAGES CXX)
+project(ReaperCore VERSION 0.2.0 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "ReaperCore currently supports Windows only.")
@@ -12,8 +12,13 @@ endif()
 
 add_library(ReaperCore SHARED
     src/application.cpp
+    src/backend.cpp
+    src/core.cpp
     src/dllmain.cpp
+    src/file_system_manager.cpp
+    src/folder_system_manager.cpp
     src/logger.cpp
+    src/settings_system_manager.cpp
 )
 
 target_include_directories(ReaperCore

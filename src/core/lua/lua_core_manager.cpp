@@ -15,18 +15,24 @@ namespace reapercore
     {
         {
             std::scoped_lock lock(m_mutex);
+            if (m_initialized)
+                return true;
+        }
+
+        if (!files.create_directory(context.scripts_directory)
+            || !files.create_directory(context.modules_directory)
+            || !files.create_directory(context.data_directory))
+        {
+            logging.error("lua", "LuaCore_Manager could not create its folders.");
+            return false;
+        }
+
+        {
+            std::scoped_lock lock(m_mutex);
             m_files = &files;
             m_logging = &logging;
             m_context = std::move(context);
             m_initialized = true;
-        }
-
-        if (!files.create_directory(m_context.scripts_directory)
-            || !files.create_directory(m_context.modules_directory)
-            || !files.create_directory(m_context.data_directory))
-        {
-            logging.error("lua", "LuaCore_Manager could not create its folders.");
-            return false;
         }
 
         logging.info("lua", "LuaCore_Manager initialized.", {
@@ -39,16 +45,32 @@ namespace reapercore
 
     void LuaCore_Manager::shutdown() noexcept
     {
-        std::scoped_lock lock(m_mutex);
-        if (!m_initialized)
-            return;
+        Logging_Manager* logging{};
+        std::shared_ptr<Lua_Runtime_Interface> runtime;
 
-        if (m_runtime)
-            m_runtime->shutdown();
-        m_runtime.reset();
-        for (auto& script : m_scripts)
-            script.state = Lua_Script_State::discovered;
-        m_initialized = false;
+        {
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            {
+                std::scoped_lock lock(m_mutex);
+                if (!m_initialized)
+                    return;
+
+                logging = m_logging;
+                runtime = std::move(m_runtime);
+                for (auto& script : m_scripts)
+                    script.state = Lua_Script_State::discovered;
+
+                m_files = nullptr;
+                m_logging = nullptr;
+                m_initialized = false;
+            }
+
+            if (runtime)
+                runtime->shutdown();
+        }
+
+        if (logging)
+            logging->info("lua", "LuaCore_Manager stopped.");
     }
 
     bool LuaCore_Manager::install_runtime(std::unique_ptr<Lua_Runtime_Interface> runtime)
@@ -56,37 +78,73 @@ namespace reapercore
         if (!runtime)
             return false;
 
-        std::scoped_lock lock(m_mutex);
-        if (!m_initialized)
-            return false;
-
-        if (m_runtime)
-            m_runtime->shutdown();
-
-        std::string error;
-        if (!runtime->initialize(m_context, error))
+        Lua_Runtime_Context context;
+        Logging_Manager* logging{};
         {
-            if (m_logging)
-                m_logging->error("lua", "Lua runtime initialization failed.", {
+            std::scoped_lock lock(m_mutex);
+            if (!m_initialized)
+                return false;
+            context = m_context;
+            logging = m_logging;
+        }
+
+        auto incoming = std::shared_ptr<Lua_Runtime_Interface>(std::move(runtime));
+        std::string error;
+        if (!incoming->initialize(context, error))
+        {
+            if (logging)
+            {
+                logging->error("lua", "Lua runtime initialization failed.", {
                     {"error", error}
                 });
+            }
             return false;
         }
 
-        m_runtime = std::move(runtime);
-        if (m_logging)
-            m_logging->info("lua", "Lua runtime installed.");
+        std::shared_ptr<Lua_Runtime_Interface> previous;
+        {
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            {
+                std::scoped_lock lock(m_mutex);
+                if (!m_initialized)
+                {
+                    incoming->shutdown();
+                    return false;
+                }
+                previous = std::move(m_runtime);
+                m_runtime = incoming;
+            }
+
+            if (previous)
+                previous->shutdown();
+        }
+
+        if (logging)
+            logging->info("lua", "Lua runtime installed.");
         return true;
     }
 
     void LuaCore_Manager::remove_runtime() noexcept
     {
-        std::scoped_lock lock(m_mutex);
-        if (m_runtime)
-            m_runtime->shutdown();
-        m_runtime.reset();
-        for (auto& script : m_scripts)
-            script.state = Lua_Script_State::discovered;
+        Logging_Manager* logging{};
+        std::shared_ptr<Lua_Runtime_Interface> runtime;
+
+        {
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            {
+                std::scoped_lock lock(m_mutex);
+                logging = m_logging;
+                runtime = std::move(m_runtime);
+                for (auto& script : m_scripts)
+                    script.state = Lua_Script_State::discovered;
+            }
+
+            if (runtime)
+                runtime->shutdown();
+        }
+
+        if (logging && runtime)
+            logging->info("lua", "Lua runtime removed.");
     }
 
     bool LuaCore_Manager::runtime_ready() const noexcept
@@ -98,12 +156,14 @@ namespace reapercore
     std::size_t LuaCore_Manager::discover_scripts()
     {
         File_System_Manager* files{};
+        Logging_Manager* logging{};
         std::filesystem::path scripts_directory;
         {
             std::scoped_lock lock(m_mutex);
             if (!m_initialized || m_files == nullptr)
                 return 0;
             files = m_files;
+            logging = m_logging;
             scripts_directory = m_context.scripts_directory;
         }
 
@@ -113,7 +173,7 @@ namespace reapercore
         for (const auto& path : paths)
         {
             Lua_Script_Entry entry;
-            entry.id = make_id(path);
+            entry.id = make_id(path, scripts_directory);
             entry.name = path.stem().string();
             entry.path = path;
             discovered.push_back(std::move(entry));
@@ -123,11 +183,14 @@ namespace reapercore
             std::scoped_lock lock(m_mutex);
             for (auto& entry : discovered)
             {
-                const auto existing = std::find_if(m_scripts.begin(), m_scripts.end(),
+                const auto existing = std::find_if(
+                    m_scripts.begin(),
+                    m_scripts.end(),
                     [&entry](const Lua_Script_Entry& value)
                     {
                         return value.id == entry.id;
                     });
+
                 if (existing != m_scripts.end())
                 {
                     entry.state = existing->state;
@@ -139,111 +202,238 @@ namespace reapercore
             m_scripts = std::move(discovered);
         }
 
-        if (m_logging)
-            m_logging->info("lua", "Lua script discovery completed.", {
+        if (logging)
+        {
+            logging->info("lua", "Lua script discovery completed.", {
                 {"count", std::to_string(paths.size())}
             });
+        }
         return paths.size();
     }
 
     bool LuaCore_Manager::load_script(const std::string_view id)
     {
-        std::scoped_lock lock(m_mutex);
-        const auto index = find_index_unlocked(id);
-        if (!index)
-            return false;
-        auto& script = m_scripts[*index];
+        Logging_Manager* logging{};
+        std::shared_ptr<Lua_Runtime_Interface> runtime;
+        Lua_Script_Entry script_snapshot;
 
-        if (!m_runtime)
         {
-            script.state = Lua_Script_State::faulted;
-            script.last_error = "No Lua runtime is installed.";
-            if (m_logging)
-                m_logging->warning("lua", "Script load deferred because no runtime is installed.", {
-                    {"script", script.id}
-                });
-            return false;
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            {
+                std::scoped_lock lock(m_mutex);
+                const auto index = find_index_unlocked(id);
+                if (!index)
+                    return false;
+
+                auto& script = m_scripts[*index];
+                logging = m_logging;
+                runtime = m_runtime;
+                if (!runtime)
+                {
+                    script.state = Lua_Script_State::faulted;
+                    script.last_error = "No Lua runtime is installed.";
+                    script_snapshot = script;
+                }
+                else
+                {
+                    script_snapshot = script;
+                }
+            }
+
+            if (!runtime)
+            {
+                if (logging)
+                {
+                    logging->warning(
+                        "lua",
+                        "Script load deferred because no runtime is installed.",
+                        {{"script", script_snapshot.id}});
+                }
+                return false;
+            }
+
+            std::string error;
+            bool loaded{};
+            try
+            {
+                loaded = runtime->load_script(script_snapshot, error);
+            }
+            catch (const std::exception& exception)
+            {
+                error = exception.what();
+            }
+            catch (...)
+            {
+                error = "Unknown exception while loading the script.";
+            }
+
+            {
+                std::scoped_lock lock(m_mutex);
+                const auto current = find_index_unlocked(id);
+                if (!current)
+                    return false;
+
+                auto& script = m_scripts[*current];
+                if (loaded)
+                {
+                    script.state = Lua_Script_State::loaded;
+                    script.last_error.clear();
+                }
+                else
+                {
+                    script.state = Lua_Script_State::faulted;
+                    script.last_error = error.empty()
+                        ? "Lua runtime rejected the script."
+                        : std::move(error);
+                }
+                script_snapshot = script;
+            }
         }
 
-        std::string error;
-        if (!m_runtime->load_script(script, error))
+        if (script_snapshot.state == Lua_Script_State::loaded)
         {
-            script.state = Lua_Script_State::faulted;
-            script.last_error = std::move(error);
-            if (m_logging)
-                m_logging->error("lua", "Lua script failed to load.", {
-                    {"script", script.id},
-                    {"error", script.last_error}
-                });
-            return false;
+            if (logging)
+                logging->info("lua", "Lua script loaded.", {{"script", script_snapshot.id}});
+            return true;
         }
 
-        script.state = Lua_Script_State::loaded;
-        script.last_error.clear();
-        if (m_logging)
-            m_logging->info("lua", "Lua script loaded.", {{"script", script.id}});
-        return true;
+        if (logging)
+        {
+            logging->error("lua", "Lua script failed to load.", {
+                {"script", script_snapshot.id},
+                {"error", script_snapshot.last_error}
+            });
+        }
+        return false;
     }
 
     bool LuaCore_Manager::unload_script(const std::string_view id)
     {
-        std::scoped_lock lock(m_mutex);
-        const auto index = find_index_unlocked(id);
-        if (!index)
-            return false;
-        auto& script = m_scripts[*index];
+        Logging_Manager* logging{};
+        std::shared_ptr<Lua_Runtime_Interface> runtime;
+        Lua_Script_Entry script_snapshot;
+        bool unloaded{true};
 
-        if (!m_runtime || script.state != Lua_Script_State::loaded)
         {
-            script.state = Lua_Script_State::discovered;
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            {
+                std::scoped_lock lock(m_mutex);
+                const auto index = find_index_unlocked(id);
+                if (!index)
+                    return false;
+
+                auto& script = m_scripts[*index];
+                logging = m_logging;
+                runtime = m_runtime;
+                script_snapshot = script;
+
+                if (!runtime || script.state != Lua_Script_State::loaded)
+                {
+                    script.state = Lua_Script_State::discovered;
+                    script.last_error.clear();
+                    return true;
+                }
+            }
+
+            std::string error;
+            try
+            {
+                unloaded = runtime->unload_script(script_snapshot, error);
+            }
+            catch (const std::exception& exception)
+            {
+                unloaded = false;
+                error = exception.what();
+            }
+            catch (...)
+            {
+                unloaded = false;
+                error = "Unknown exception while unloading the script.";
+            }
+
+            {
+                std::scoped_lock lock(m_mutex);
+                const auto current = find_index_unlocked(id);
+                if (!current)
+                    return false;
+
+                auto& script = m_scripts[*current];
+                if (unloaded)
+                {
+                    script.state = Lua_Script_State::discovered;
+                    script.last_error.clear();
+                }
+                else
+                {
+                    script.state = Lua_Script_State::faulted;
+                    script.last_error = error.empty()
+                        ? "Lua runtime rejected the unload request."
+                        : std::move(error);
+                }
+                script_snapshot = script;
+            }
+        }
+
+        if (unloaded)
+        {
+            if (logging)
+                logging->info("lua", "Lua script unloaded.", {{"script", script_snapshot.id}});
             return true;
         }
 
-        std::string error;
-        if (!m_runtime->unload_script(script, error))
+        if (logging)
         {
-            script.state = Lua_Script_State::faulted;
-            script.last_error = std::move(error);
-            if (m_logging)
-                m_logging->error("lua", "Lua script failed to unload.", {
-                    {"script", script.id},
-                    {"error", script.last_error}
-                });
-            return false;
+            logging->error("lua", "Lua script failed to unload.", {
+                {"script", script_snapshot.id},
+                {"error", script_snapshot.last_error}
+            });
         }
-
-        script.state = Lua_Script_State::discovered;
-        script.last_error.clear();
-        if (m_logging)
-            m_logging->info("lua", "Lua script unloaded.", {{"script", script.id}});
-        return true;
+        return false;
     }
 
     bool LuaCore_Manager::reload_script(const std::string_view id)
     {
-        static_cast<void>(unload_script(id));
+        if (!unload_script(id))
+            return false;
         return load_script(id);
     }
 
     void LuaCore_Manager::tick()
     {
-        std::scoped_lock lock(m_mutex);
-        if (!m_runtime)
-            return;
+        Logging_Manager* logging{};
+        std::string failure;
 
-        try
         {
-            m_runtime->tick();
+            std::scoped_lock runtime_lock(m_runtime_mutex);
+            std::shared_ptr<Lua_Runtime_Interface> runtime;
+            {
+                std::scoped_lock lock(m_mutex);
+                runtime = m_runtime;
+                logging = m_logging;
+            }
+
+            if (!runtime)
+                return;
+
+            try
+            {
+                runtime->tick();
+            }
+            catch (const std::exception& exception)
+            {
+                failure = exception.what();
+            }
+            catch (...)
+            {
+                failure = "Unknown exception during Lua runtime tick.";
+            }
         }
-        catch (const std::exception& exception)
+
+        if (logging && !failure.empty())
         {
-            if (m_logging)
-                m_logging->log_exception("lua", exception, "Lua runtime tick failed.");
-        }
-        catch (...)
-        {
-            if (m_logging)
-                m_logging->critical("lua", "Lua runtime tick failed with an unknown exception.");
+            logging->error("lua", "Lua runtime tick failed.", {
+                {"error", failure}
+            });
         }
     }
 
@@ -258,27 +448,35 @@ namespace reapercore
     {
         std::scoped_lock lock(m_mutex);
         const auto index = find_index_unlocked(id);
-        return index ? std::optional<Lua_Script_Entry>(m_scripts[*index]) : std::nullopt;
+        return index
+            ? std::optional<Lua_Script_Entry>(m_scripts[*index])
+            : std::nullopt;
     }
 
     std::optional<std::size_t> LuaCore_Manager::find_index_unlocked(
         const std::string_view id) const
     {
-        const auto found = std::find_if(m_scripts.begin(), m_scripts.end(),
+        const auto found = std::find_if(
+            m_scripts.begin(),
+            m_scripts.end(),
             [id](const Lua_Script_Entry& script)
             {
                 return script.id == id;
             });
+
         if (found == m_scripts.end())
             return std::nullopt;
         return static_cast<std::size_t>(std::distance(m_scripts.begin(), found));
     }
 
-    std::string LuaCore_Manager::make_id(const std::filesystem::path& path) const
+    std::string LuaCore_Manager::make_id(
+        const std::filesystem::path& path,
+        const std::filesystem::path& scripts_directory) const
     {
         std::error_code error;
-        const auto relative = std::filesystem::relative(
-            path, m_context.scripts_directory, error);
-        return error ? path.filename().generic_string() : relative.generic_string();
+        const auto relative = std::filesystem::relative(path, scripts_directory, error);
+        return error
+            ? path.filename().generic_string()
+            : relative.generic_string();
     }
 }

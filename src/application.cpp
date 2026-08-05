@@ -33,6 +33,7 @@ namespace reapercore
         m_logger.write(log_level::info, "ReaperCore shutting down.");
         m_logger.shutdown();
         FreeLibraryAndExitThread(m_module, EXIT_SUCCESS);
+        return EXIT_SUCCESS;
     }
 
     void application::request_stop() noexcept

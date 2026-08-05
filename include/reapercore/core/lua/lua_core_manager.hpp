@@ -42,6 +42,7 @@ namespace reapercore
     {
     public:
         virtual ~Lua_Runtime_Interface() = default;
+
         virtual bool initialize(
             const Lua_Runtime_Context& context,
             std::string& error) = 0;
@@ -82,12 +83,13 @@ namespace reapercore
         [[nodiscard]] std::optional<std::size_t> find_index_unlocked(
             std::string_view id) const;
         [[nodiscard]] std::string make_id(
-            const std::filesystem::path& path) const;
+            const std::filesystem::path& path,
+            const std::filesystem::path& scripts_directory) const;
 
         File_System_Manager* m_files{};
         Logging_Manager* m_logging{};
         Lua_Runtime_Context m_context;
-        std::unique_ptr<Lua_Runtime_Interface> m_runtime;
+        std::shared_ptr<Lua_Runtime_Interface> m_runtime;
         mutable std::mutex m_mutex;
         std::vector<Lua_Script_Entry> m_scripts;
         bool m_initialized{};

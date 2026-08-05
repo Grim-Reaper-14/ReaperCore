@@ -1,5 +1,23 @@
 #include "reapercore/core/core/core.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+
+namespace
+{
+    std::size_t bounded_size(
+        const int value,
+        const int minimum,
+        const int maximum,
+        const std::size_t fallback) noexcept
+    {
+        if (value < minimum || value > maximum)
+            return fallback;
+        return static_cast<std::size_t>(value);
+    }
+}
+
 namespace reapercore
 {
     bool Core::initialize()
@@ -27,14 +45,27 @@ namespace reapercore
         logging_config.enable_debugger = m_settings.get_bool("logging.debugger", true);
         logging_config.enable_memory_buffer = m_settings.get_bool("logging.memory", true);
         logging_config.rotate_on_start = m_settings.get_bool("logging.rotate_on_start", false);
-        logging_config.queue_capacity = static_cast<std::size_t>(
-            m_settings.get_int("logging.queue_capacity", 8192));
-        logging_config.memory_capacity = static_cast<std::size_t>(
-            m_settings.get_int("logging.memory_capacity", 1024));
-        logging_config.maximum_file_size_bytes = static_cast<std::size_t>(
-            m_settings.get_int("logging.maximum_file_mb", 8)) * 1024U * 1024U;
-        logging_config.retained_file_count = static_cast<std::size_t>(
-            m_settings.get_int("logging.retained_files", 5));
+        logging_config.queue_capacity = bounded_size(
+            m_settings.get_int("logging.queue_capacity", 8192),
+            128,
+            1'048'576,
+            8192);
+        logging_config.memory_capacity = bounded_size(
+            m_settings.get_int("logging.memory_capacity", 1024),
+            16,
+            100'000,
+            1024);
+        const auto maximum_file_mb = bounded_size(
+            m_settings.get_int("logging.maximum_file_mb", 8),
+            1,
+            1024,
+            8);
+        logging_config.maximum_file_size_bytes = maximum_file_mb * 1024U * 1024U;
+        logging_config.retained_file_count = bounded_size(
+            m_settings.get_int("logging.retained_files", 5),
+            0,
+            100,
+            5);
 
         if (!m_logging.initialize(std::move(logging_config)))
             return false;

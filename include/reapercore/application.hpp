@@ -1,10 +1,8 @@
 #pragma once
 
-#include "reapercore/logger.hpp"
+#include "reapercore/core.hpp"
 
 #include <Windows.h>
-
-#include <atomic>
 
 namespace reapercore
 {
@@ -17,11 +15,9 @@ namespace reapercore
         application& operator=(const application&) = delete;
 
         DWORD run();
-        void request_stop() noexcept;
 
     private:
         HMODULE m_module{};
-        std::atomic_bool m_running{true};
-        logger m_logger;
+        Core m_core;
     };
 }

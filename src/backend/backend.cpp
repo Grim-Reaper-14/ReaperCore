@@ -4,6 +4,8 @@
 #include "reapercore/core/settings_system/settings_system_manager.hpp"
 
 #include <Windows.h>
+
+#include <string>
 #include <thread>
 
 namespace reapercore

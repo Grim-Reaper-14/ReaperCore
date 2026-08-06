@@ -77,6 +77,7 @@ add_library(ReaperCore SHARED
     src/backend/d3d12/fence_manager.cpp
     src/backend/d3d12/frame_resource_manager.cpp
     src/backend/d3d12/srv_descriptor_allocator.cpp
+    src/backend/gta/gta_pointers.cpp
     src/backend/gta/gta_runtime.cpp
     src/backend/gta/pattern_scanner.cpp
     src/backend/hooking/hook_registry.cpp

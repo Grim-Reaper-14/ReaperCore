@@ -143,7 +143,8 @@ namespace reapercore
         descriptor.name = std::move(name);
         descriptor.priority = priority;
         descriptor.queue = queue;
-        descriptor.ready_at = std::chrono::steady_clock::now() + std::max(delay, std::chrono::milliseconds::zero());
+        descriptor.ready_at = std::chrono::steady_clock::now() +
+            std::max(delay, std::chrono::milliseconds::zero());
         descriptor.cancellation = std::move(cancellation);
         descriptor.function = std::move(function);
         return enqueue(std::move(descriptor));
@@ -151,7 +152,9 @@ namespace reapercore
 
     std::size_t Task_Manager::process_main_thread(const std::size_t maximum_tasks)
     {
-        const auto limit = maximum_tasks == 0 ? std::numeric_limits<std::size_t>::max() : maximum_tasks;
+        const auto limit = maximum_tasks == 0
+            ? std::numeric_limits<std::size_t>::max()
+            : maximum_tasks;
         std::size_t processed{};
 
         while (processed < limit)
@@ -232,7 +235,9 @@ namespace reapercore
         return m_workers.size();
     }
 
-    bool Task_Manager::higher_priority(const Queued_Task& left, const Queued_Task& right) noexcept
+    bool Task_Manager::higher_priority(
+        const Queued_Task& left,
+        const Queued_Task& right) noexcept
     {
         if (left.descriptor.ready_at != right.descriptor.ready_at)
             return left.descriptor.ready_at < right.descriptor.ready_at;
@@ -256,7 +261,8 @@ namespace reapercore
                 std::unique_lock lock(m_mutex);
                 m_condition.wait(lock, [this]
                 {
-                    return !m_running.load(std::memory_order_acquire) || !m_worker_queue.empty();
+                    return !m_running.load(std::memory_order_acquire) ||
+                        !m_worker_queue.empty();
                 });
 
                 if (!m_running.load(std::memory_order_acquire))
@@ -282,22 +288,13 @@ namespace reapercore
         }
     }
 
-    std::optional<Task_Manager::Queued_Task> Task_Manager::take_ready_worker_task()
-    {
-        std::scoped_lock lock(m_mutex);
-        if (m_worker_queue.empty() || m_worker_queue.front().descriptor.ready_at > std::chrono::steady_clock::now())
-            return std::nullopt;
-
-        Queued_Task task = std::move(m_worker_queue.front());
-        m_worker_queue.pop_front();
-        return task;
-    }
-
-    std::optional<Task_Manager::Queued_Task> Task_Manager::take_ready_main_thread_task()
+    std::optional<Task_Manager::Queued_Task>
+    Task_Manager::take_ready_main_thread_task()
     {
         std::scoped_lock lock(m_mutex);
         if (m_main_thread_queue.empty() ||
-            m_main_thread_queue.front().descriptor.ready_at > std::chrono::steady_clock::now())
+            m_main_thread_queue.front().descriptor.ready_at >
+                std::chrono::steady_clock::now())
         {
             return std::nullopt;
         }
@@ -320,7 +317,8 @@ namespace reapercore
         Queued_Task queued{std::move(descriptor), cancellation_state};
 
         std::scoped_lock lock(m_mutex);
-        const auto total_queued = m_worker_queue.size() + m_main_thread_queue.size();
+        const auto total_queued =
+            m_worker_queue.size() + m_main_thread_queue.size();
         if (total_queued >= m_queue_capacity)
         {
             if (m_logging != nullptr)
@@ -343,11 +341,12 @@ namespace reapercore
 
     void Task_Manager::execute(Queued_Task& task, const bool worker_thread) noexcept
     {
-        const bool internally_cancelled = task.cancelled->load(std::memory_order_acquire);
-        const bool externally_cancelled = task.descriptor.cancellation.cancellation_requested();
-        if (internally_cancelled || externally_cancelled)
+        Cancellation_Token effective_cancellation = task.descriptor.cancellation;
+        effective_cancellation.m_states.emplace_back(task.cancelled);
+
+        if (effective_cancellation.cancellation_requested())
         {
-            if (!internally_cancelled)
+            if (!task.cancelled->load(std::memory_order_acquire))
                 m_cancelled.fetch_add(1, std::memory_order_relaxed);
             erase_tracking(task.descriptor.id);
             return;
@@ -358,7 +357,7 @@ namespace reapercore
 
         try
         {
-            task.descriptor.function(task.descriptor.cancellation);
+            task.descriptor.function(effective_cancellation);
             m_completed.fetch_add(1, std::memory_order_relaxed);
         }
         catch (const std::exception& exception)
@@ -372,9 +371,10 @@ namespace reapercore
             m_failed.fetch_add(1, std::memory_order_relaxed);
             if (m_logging != nullptr)
             {
-                m_logging->error("tasks", "Task execution failed with an unknown exception.", {
-                    {"task", task.descriptor.name}
-                });
+                m_logging->error(
+                    "tasks",
+                    "Task execution failed with an unknown exception.",
+                    {{"task", task.descriptor.name}});
             }
         }
 

@@ -2,9 +2,12 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
 
 namespace reapercore
 {
+    class Task_Manager;
+
     class Cancellation_Token final
     {
     public:
@@ -12,23 +15,34 @@ namespace reapercore
 
         [[nodiscard]] bool cancellation_requested() const noexcept
         {
-            return m_state != nullptr && m_state->load(std::memory_order_acquire);
+            const bool primary_requested =
+                m_primary_state != nullptr &&
+                m_primary_state->load(std::memory_order_acquire);
+            const bool secondary_requested =
+                m_secondary_state != nullptr &&
+                m_secondary_state->load(std::memory_order_acquire);
+            return primary_requested || secondary_requested;
         }
 
         explicit operator bool() const noexcept
         {
-            return m_state != nullptr;
+            return m_primary_state != nullptr || m_secondary_state != nullptr;
         }
 
     private:
-        explicit Cancellation_Token(std::shared_ptr<std::atomic_bool> state) noexcept :
-            m_state(std::move(state))
+        explicit Cancellation_Token(
+            std::shared_ptr<std::atomic_bool> primary_state,
+            std::shared_ptr<std::atomic_bool> secondary_state = {}) noexcept :
+            m_primary_state(std::move(primary_state)),
+            m_secondary_state(std::move(secondary_state))
         {
         }
 
-        std::shared_ptr<std::atomic_bool> m_state;
+        std::shared_ptr<std::atomic_bool> m_primary_state;
+        std::shared_ptr<std::atomic_bool> m_secondary_state;
 
         friend class Cancellation_Source;
+        friend class Task_Manager;
     };
 
     class Cancellation_Source final

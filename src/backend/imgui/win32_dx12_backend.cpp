@@ -132,7 +132,7 @@ namespace reapercore
         {
             m_layer->make_current();
             if (m_layer->frame_active())
-                m_layer->end_frame();
+                m_layer->cancel_frame();
         }
 
         ImGui_ImplDX12_Shutdown();

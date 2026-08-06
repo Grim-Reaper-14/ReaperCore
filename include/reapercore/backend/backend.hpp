@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reapercore/backend/d3d12/d3d12_backend.hpp"
+#include "reapercore/backend/gta/gta_runtime.hpp"
 #include "reapercore/backend/hooking/hook_registry.hpp"
 #include "reapercore/backend/imgui/dx12_texture_registry.hpp"
 #include "reapercore/backend/imgui/imgui_layer.hpp"
@@ -69,6 +70,7 @@ namespace reapercore
             imgui_texture_metrics() const noexcept;
 
         [[nodiscard]] bool running() const noexcept;
+        [[nodiscard]] GTA_Runtime& gta() noexcept;
         [[nodiscard]] D3D12_Backend& d3d12() noexcept;
         [[nodiscard]] ImGui_Layer& imgui() noexcept;
         [[nodiscard]] ImGui_Win32_DX12_Backend& imgui_backend() noexcept;
@@ -81,6 +83,7 @@ namespace reapercore
         ReaperCore_Lua_System* m_lua{};
         Event_Manager* m_events{};
         Task_Manager* m_tasks{};
+        GTA_Runtime m_gta;
         D3D12_Backend m_d3d12;
         ImGui_Layer m_imgui;
         ImGui_Win32_DX12_Backend m_imgui_backend;

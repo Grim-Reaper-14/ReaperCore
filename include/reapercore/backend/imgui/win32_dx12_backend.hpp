@@ -80,7 +80,7 @@ namespace reapercore
         ImGui_Layer* m_layer{};
         ImGui_Win32_DX12_Attach_Info m_attach_info;
 
-        mutable std::mutex m_mutex;
+        mutable std::recursive_mutex m_mutex;
         std::atomic_bool m_initialized{false};
         std::atomic_bool m_attached{false};
     };

@@ -119,6 +119,19 @@ namespace reapercore
         m_frame_active.store(false, std::memory_order_release);
     }
 
+    void ImGui_Layer::cancel_frame() noexcept
+    {
+        std::scoped_lock lock(m_context_mutex);
+        if (!initialized() || m_context == nullptr ||
+            !m_frame_active.exchange(false, std::memory_order_acq_rel))
+        {
+            return;
+        }
+
+        ImGui::SetCurrentContext(m_context);
+        ImGui::EndFrame();
+    }
+
     ImGui_Layer::Draw_Callback_Id ImGui_Layer::add_draw_callback(
         Draw_Callback callback)
     {

@@ -74,6 +74,7 @@ add_library(ReaperCore SHARED
     src/backend/d3d12/d3d12_backend.cpp
     src/backend/d3d12/srv_descriptor_allocator.cpp
     src/backend/hooking/hook_registry.cpp
+    src/backend/imgui/dx12_texture_registry.cpp
     src/backend/imgui/imgui_layer.cpp
     src/backend/imgui/win32_dx12_backend.cpp
     src/backend/renderer/renderer.cpp

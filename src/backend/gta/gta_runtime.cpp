@@ -40,17 +40,21 @@ namespace reapercore
     bool GTA_Runtime::initialize(Logging_Manager& logging) noexcept
     {
         if (m_initialized)
-            return true;
+            return ready_for_natives();
 
         m_logging = &logging;
 
         HMODULE module = GetModuleHandleW(L"GTA5_Enhanced.exe");
         if (module == nullptr)
-            module = GetModuleHandleW(nullptr);
+        {
+            logging.error("gta", "GTA5_Enhanced.exe is not loaded. ReaperCore GTA runtime requires GTA V Enhanced.");
+            m_logging = nullptr;
+            return false;
+        }
 
         if (!inspect_module(module, m_module_base, m_module_size))
         {
-            logging.error("gta", "Failed to inspect the GTA executable module.");
+            logging.error("gta", "Failed to inspect GTA5_Enhanced.exe.");
             m_logging = nullptr;
             m_module_base = 0;
             m_module_size = 0;
@@ -63,24 +67,38 @@ namespace reapercore
             module_name,
             static_cast<DWORD>(std::size(module_name)));
 
-        std::string executable_name = "GTA executable";
+        std::string executable_name = "GTA5_Enhanced.exe";
         if (length != 0)
         {
             const std::wstring wide_name(module_name, length);
             executable_name.assign(wide_name.begin(), wide_name.end());
         }
 
-        m_initialized = true;
         logging.info("gta", "GTA runtime module discovered.", {
             {"module", executable_name},
             {"base", std::to_string(m_module_base)},
             {"size", std::to_string(m_module_size)}
         });
+
+        if (!m_pointers.initialize(logging, m_module_base, m_module_size))
+        {
+            logging.error("gta", "GTA runtime initialization stopped because native pointers are incomplete.");
+            m_pointers.shutdown();
+            m_module_size = 0;
+            m_module_base = 0;
+            m_logging = nullptr;
+            return false;
+        }
+
+        m_initialized = true;
+        logging.info("gta", "GTA Enhanced runtime is ready for native subsystem initialization.");
         return true;
     }
 
     void GTA_Runtime::shutdown() noexcept
     {
+        m_pointers.shutdown();
+
         if (m_initialized && m_logging != nullptr)
             m_logging->info("gta", "GTA runtime stopped.");
 
@@ -95,6 +113,11 @@ namespace reapercore
         return m_initialized;
     }
 
+    bool GTA_Runtime::ready_for_natives() const noexcept
+    {
+        return m_initialized && m_pointers.ready_for_natives();
+    }
+
     std::uintptr_t GTA_Runtime::module_base() const noexcept
     {
         return m_module_base;
@@ -103,5 +126,15 @@ namespace reapercore
     std::size_t GTA_Runtime::module_size() const noexcept
     {
         return m_module_size;
+    }
+
+    GTA_Pointers& GTA_Runtime::pointers() noexcept
+    {
+        return m_pointers;
+    }
+
+    const GTA_Pointers& GTA_Runtime::pointers() const noexcept
+    {
+        return m_pointers;
     }
 }

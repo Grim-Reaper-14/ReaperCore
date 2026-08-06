@@ -4,9 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string_view>
-#include <unordered_map>
 
 struct ImDrawData;
 struct ImGuiContext;
@@ -57,7 +57,7 @@ namespace reapercore
 
         mutable std::mutex m_context_mutex;
         mutable std::mutex m_callback_mutex;
-        std::unordered_map<Draw_Callback_Id, Draw_Callback> m_draw_callbacks;
+        std::map<Draw_Callback_Id, Draw_Callback> m_draw_callbacks;
 
         std::atomic_bool m_initialized{false};
         std::atomic_bool m_frame_active{false};

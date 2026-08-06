@@ -158,10 +158,26 @@ namespace reapercore
     bool ImGui_Win32_DX12_Backend::render(
         ID3D12GraphicsCommandList* command_list) noexcept
     {
+        ImGui_DX12_Frame_Context frame;
+        frame.command_list = command_list;
+        return render(frame);
+    }
+
+    bool ImGui_Win32_DX12_Backend::render(
+        const ImGui_DX12_Frame_Context& frame) noexcept
+    {
         std::scoped_lock lock(m_mutex);
-        if (!attached() || m_layer == nullptr || command_list == nullptr ||
+        if (!attached() || m_layer == nullptr || frame.command_list == nullptr ||
             !m_layer->frame_active())
         {
+            return false;
+        }
+
+        if ((frame.transition_render_target && frame.render_target == nullptr) ||
+            (frame.bind_render_target && frame.render_target_view.ptr == 0))
+        {
+            if (m_logging != nullptr)
+                m_logging->error("imgui", "Invalid DX12 frame context for ImGui rendering.");
             return false;
         }
 
@@ -172,11 +188,47 @@ namespace reapercore
         if (draw_data == nullptr)
             return false;
 
+        if (frame.transition_render_target &&
+            frame.state_before != D3D12_RESOURCE_STATE_RENDER_TARGET)
+        {
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            barrier.Transition.pResource = frame.render_target;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrier.Transition.StateBefore = frame.state_before;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            frame.command_list->ResourceBarrier(1, &barrier);
+        }
+
+        if (frame.bind_render_target)
+        {
+            frame.command_list->OMSetRenderTargets(
+                1,
+                &frame.render_target_view,
+                FALSE,
+                nullptr);
+        }
+
         ID3D12DescriptorHeap* descriptor_heaps[] = {
             m_attach_info.srv_descriptor_heap
         };
-        command_list->SetDescriptorHeaps(1, descriptor_heaps);
-        ImGui_ImplDX12_RenderDrawData(draw_data, command_list);
+        frame.command_list->SetDescriptorHeaps(1, descriptor_heaps);
+        ImGui_ImplDX12_RenderDrawData(draw_data, frame.command_list);
+
+        if (frame.transition_render_target &&
+            frame.state_after != D3D12_RESOURCE_STATE_RENDER_TARGET)
+        {
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            barrier.Transition.pResource = frame.render_target;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barrier.Transition.StateAfter = frame.state_after;
+            frame.command_list->ResourceBarrier(1, &barrier);
+        }
+
         return true;
     }
 

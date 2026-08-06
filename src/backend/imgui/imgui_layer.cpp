@@ -60,6 +60,12 @@ namespace reapercore
         m_logging = nullptr;
     }
 
+    bool ImGui_Layer::begin_frame() noexcept
+    {
+        std::scoped_lock lock(m_context_mutex);
+        return begin_frame_unlocked();
+    }
+
     bool ImGui_Layer::begin_frame(
         const float delta_seconds,
         const float display_width,
@@ -72,6 +78,18 @@ namespace reapercore
             return false;
         }
 
+        ImGui::SetCurrentContext(m_context);
+        auto& io = ImGui::GetIO();
+        io.DeltaTime = delta_seconds > 0.0F ? delta_seconds : (1.0F / 60.0F);
+        io.DisplaySize = ImVec2(display_width, display_height);
+        return begin_frame_unlocked();
+    }
+
+    bool ImGui_Layer::begin_frame_unlocked() noexcept
+    {
+        if (!initialized() || m_context == nullptr)
+            return false;
+
         bool expected = false;
         if (!m_frame_active.compare_exchange_strong(
                 expected,
@@ -82,9 +100,6 @@ namespace reapercore
         }
 
         ImGui::SetCurrentContext(m_context);
-        auto& io = ImGui::GetIO();
-        io.DeltaTime = delta_seconds > 0.0F ? delta_seconds : (1.0F / 60.0F);
-        io.DisplaySize = ImVec2(display_width, display_height);
         ImGui::NewFrame();
         return true;
     }
@@ -180,6 +195,36 @@ namespace reapercore
     bool ImGui_Layer::frame_active() const noexcept
     {
         return m_frame_active.load(std::memory_order_acquire);
+    }
+
+    bool ImGui_Layer::wants_mouse() const noexcept
+    {
+        std::scoped_lock lock(m_context_mutex);
+        if (!initialized() || m_context == nullptr)
+            return false;
+
+        ImGui::SetCurrentContext(m_context);
+        return ImGui::GetIO().WantCaptureMouse;
+    }
+
+    bool ImGui_Layer::wants_keyboard() const noexcept
+    {
+        std::scoped_lock lock(m_context_mutex);
+        if (!initialized() || m_context == nullptr)
+            return false;
+
+        ImGui::SetCurrentContext(m_context);
+        return ImGui::GetIO().WantCaptureKeyboard;
+    }
+
+    bool ImGui_Layer::wants_text_input() const noexcept
+    {
+        std::scoped_lock lock(m_context_mutex);
+        if (!initialized() || m_context == nullptr)
+            return false;
+
+        ImGui::SetCurrentContext(m_context);
+        return ImGui::GetIO().WantTextInput;
     }
 
     std::size_t ImGui_Layer::callback_count() const noexcept

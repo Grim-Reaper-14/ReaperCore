@@ -1,17 +1,33 @@
 #include "reapercore/core/folder_system/folder_system_manager.hpp"
 
+#include <Windows.h>
+#include <ShlObj.h>
+
 #include <array>
-#include <cstdlib>
+#include <memory>
 
 namespace reapercore
 {
     bool Folder_System_Manager::initialize()
     {
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata == nullptr || *appdata == '\0')
-            return false;
+        PWSTR roaming_app_data_raw{};
+        const HRESULT result = SHGetKnownFolderPath(
+            FOLDERID_RoamingAppData,
+            KF_FLAG_DEFAULT,
+            nullptr,
+            &roaming_app_data_raw);
 
-        m_root = std::filesystem::path(appdata) / "ReaperCore";
+        const std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> roaming_app_data(
+            roaming_app_data_raw,
+            &CoTaskMemFree);
+
+        if (FAILED(result) || roaming_app_data == nullptr ||
+            *roaming_app_data == L'\0')
+        {
+            return false;
+        }
+
+        m_root = std::filesystem::path(roaming_app_data.get()) / "ReaperCore";
 
         m_core = m_root / "Core";
         m_core_logs = m_core / "Logs";

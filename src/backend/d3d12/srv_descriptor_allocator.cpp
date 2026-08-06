@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace reapercore
 {
@@ -117,7 +118,7 @@ namespace reapercore
 
         std::scoped_lock lock(m_mutex);
         if (!m_initialized.load(std::memory_order_acquire) ||
-            m_heap == nullptr || m_free_indices.empty())
+            m_heap.Get() == nullptr || m_free_indices.empty())
         {
             ++m_allocation_failures;
             if (m_logging != nullptr)

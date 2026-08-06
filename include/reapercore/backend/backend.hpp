@@ -2,6 +2,7 @@
 
 #include "reapercore/backend/d3d12/d3d12_backend.hpp"
 #include "reapercore/backend/hooking/hook_registry.hpp"
+#include "reapercore/backend/imgui/dx12_texture_registry.hpp"
 #include "reapercore/backend/imgui/imgui_layer.hpp"
 #include "reapercore/backend/imgui/win32_dx12_backend.hpp"
 #include "reapercore/backend/renderer/renderer.hpp"
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 
 namespace reapercore
 {
@@ -56,6 +58,16 @@ namespace reapercore
             WPARAM word_parameter,
             LPARAM long_parameter) noexcept;
 
+        [[nodiscard]] std::optional<ImGui_DX12_Texture_Handle>
+            register_imgui_texture(
+                ID3D12Resource& resource,
+                const D3D12_SHADER_RESOURCE_VIEW_DESC* description = nullptr) noexcept;
+        bool unregister_imgui_texture(ImGui_DX12_Texture_Id id) noexcept;
+        [[nodiscard]] std::optional<ImGui_DX12_Texture_Handle>
+            find_imgui_texture(ImGui_DX12_Texture_Id id) const noexcept;
+        [[nodiscard]] ImGui_DX12_Texture_Metrics
+            imgui_texture_metrics() const noexcept;
+
         [[nodiscard]] bool running() const noexcept;
         [[nodiscard]] D3D12_Backend& d3d12() noexcept;
         [[nodiscard]] ImGui_Layer& imgui() noexcept;
@@ -72,6 +84,7 @@ namespace reapercore
         D3D12_Backend m_d3d12;
         ImGui_Layer m_imgui;
         ImGui_Win32_DX12_Backend m_imgui_backend;
+        ImGui_DX12_Texture_Registry m_imgui_textures;
         Renderer m_renderer;
         Hook_Registry m_hooks;
         mutable std::mutex m_imgui_attachment_mutex;

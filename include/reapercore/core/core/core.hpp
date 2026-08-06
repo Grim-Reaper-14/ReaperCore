@@ -7,6 +7,7 @@
 #include "reapercore/core/logging/logging_manager.hpp"
 #include "reapercore/core/lua/reapercore_lua_system.hpp"
 #include "reapercore/core/settings_system/settings_system_manager.hpp"
+#include "reapercore/core/tasks/task_manager.hpp"
 
 namespace reapercore
 {
@@ -22,6 +23,7 @@ namespace reapercore
         [[nodiscard]] Settings_System_Manager& settings() noexcept;
         [[nodiscard]] Logging_Manager& logging() noexcept;
         [[nodiscard]] Event_Manager& events() noexcept;
+        [[nodiscard]] Task_Manager& tasks() noexcept;
         [[nodiscard]] ReaperCore_Lua_System& lua() noexcept;
         [[nodiscard]] Backend& backend() noexcept;
 
@@ -31,6 +33,7 @@ namespace reapercore
         Settings_System_Manager m_settings;
         Logging_Manager m_logging;
         Event_Manager m_events;
+        Task_Manager m_tasks;
         ReaperCore_Lua_System m_lua;
         Backend m_backend;
         bool m_initialized{};

@@ -1,4 +1,5 @@
 #include "reapercore/core/core/core.hpp"
+#include "reapercore/core/events/engine_events.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -77,7 +78,7 @@ namespace reapercore
             return false;
         }
 
-        if (!m_backend.initialize(m_logging, m_settings, m_lua))
+        if (!m_backend.initialize(m_logging, m_settings, m_lua, m_events))
         {
             m_logging.error("core", "Backend failed to initialize.");
             m_lua.shutdown();
@@ -86,6 +87,7 @@ namespace reapercore
         }
 
         m_initialized = true;
+        m_events.publish(Application_Started_Event{});
         m_logging.info("core", "Core initialized.", {
             {"root", m_folders.root().string()},
             {"settings", m_settings.settings_file().string()}
@@ -104,7 +106,10 @@ namespace reapercore
         if (!m_initialized)
             return;
 
+        m_events.publish(Application_Stopping_Event{});
         m_backend.shutdown();
+        m_events.process_deferred();
+        m_events.clear();
         m_lua.shutdown();
         static_cast<void>(m_settings.save());
         m_logging.info("core", "Core shutting down.");
@@ -116,6 +121,7 @@ namespace reapercore
     File_System_Manager& Core::files() noexcept { return m_files; }
     Settings_System_Manager& Core::settings() noexcept { return m_settings; }
     Logging_Manager& Core::logging() noexcept { return m_logging; }
+    Event_Manager& Core::events() noexcept { return m_events; }
     ReaperCore_Lua_System& Core::lua() noexcept { return m_lua; }
     Backend& Core::backend() noexcept { return m_backend; }
 }

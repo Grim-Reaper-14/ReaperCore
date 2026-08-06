@@ -154,6 +154,7 @@ namespace reapercore
             m_events->process_deferred();
 
         m_renderer.shutdown();
+        detach_imgui_dx12();
         m_imgui_backend.shutdown();
         m_imgui.shutdown();
         m_d3d12.shutdown();
@@ -171,6 +172,115 @@ namespace reapercore
         m_lua = nullptr;
         m_settings = nullptr;
         m_logging = nullptr;
+    }
+
+    bool Backend::attach_imgui_dx12(
+        const Backend_ImGui_DX12_Attach_Info& info) noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        if (!running() || info.window == nullptr || info.device == nullptr ||
+            info.command_queue == nullptr || info.frames_in_flight <= 0 ||
+            info.srv_descriptor_capacity == 0)
+        {
+            if (m_logging != nullptr)
+                m_logging->error("imgui", "Invalid high-level ImGui DX12 attachment data.");
+            return false;
+        }
+
+        if (m_imgui_backend.attached())
+        {
+            return m_imgui_backend.window() == info.window &&
+                m_d3d12.device() == info.device;
+        }
+
+        const bool device_was_attached = m_d3d12.device_attached();
+        if (device_was_attached && m_d3d12.device() != info.device)
+        {
+            if (m_logging != nullptr)
+                m_logging->error("imgui", "ImGui cannot attach to a different active DX12 device.");
+            return false;
+        }
+
+        D3D12_Device_Attach_Info device_info;
+        device_info.device = info.device;
+        device_info.srv_descriptor_capacity = info.srv_descriptor_capacity;
+        if (!m_d3d12.attach_device(device_info))
+            return false;
+
+        m_imgui_owns_d3d12_attachment = !device_was_attached;
+        auto& descriptors = m_d3d12.srv_descriptors();
+
+        ImGui_Win32_DX12_Attach_Info backend_info;
+        backend_info.window = info.window;
+        backend_info.device = info.device;
+        backend_info.command_queue = info.command_queue;
+        backend_info.srv_descriptor_heap = descriptors.heap();
+        backend_info.frames_in_flight = info.frames_in_flight;
+        backend_info.rtv_format = info.rtv_format;
+        backend_info.dsv_format = info.dsv_format;
+        backend_info.descriptor_user_data = &descriptors;
+        backend_info.allocate_srv_descriptor =
+            &D3D12_Srv_Descriptor_Allocator::imgui_allocate;
+        backend_info.free_srv_descriptor =
+            &D3D12_Srv_Descriptor_Allocator::imgui_release;
+
+        if (!m_imgui_backend.attach(backend_info))
+        {
+            if (m_imgui_owns_d3d12_attachment)
+                m_d3d12.detach_device();
+            m_imgui_owns_d3d12_attachment = false;
+            return false;
+        }
+
+        if (m_logging != nullptr)
+        {
+            m_logging->info("imgui", "High-level ImGui DX12 bridge attached.", {
+                {"frames_in_flight", std::to_string(info.frames_in_flight)},
+                {"srv_descriptor_capacity", std::to_string(info.srv_descriptor_capacity)}
+            });
+        }
+        return true;
+    }
+
+    void Backend::detach_imgui_dx12() noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        const bool was_attached = m_imgui_backend.attached();
+        m_imgui_backend.detach();
+
+        if (m_imgui_owns_d3d12_attachment)
+            m_d3d12.detach_device();
+        m_imgui_owns_d3d12_attachment = false;
+
+        if (was_attached && m_logging != nullptr)
+            m_logging->info("imgui", "High-level ImGui DX12 bridge detached.");
+    }
+
+    bool Backend::begin_imgui_frame() noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_backend.begin_frame();
+    }
+
+    bool Backend::render_imgui_frame(
+        const ImGui_DX12_Frame_Context& frame) noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_backend.render(frame);
+    }
+
+    bool Backend::handle_imgui_window_message(
+        const HWND window,
+        const UINT message,
+        const WPARAM word_parameter,
+        const LPARAM long_parameter) noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_backend.handle_window_message(
+            window,
+            message,
+            word_parameter,
+            long_parameter);
     }
 
     bool Backend::running() const noexcept

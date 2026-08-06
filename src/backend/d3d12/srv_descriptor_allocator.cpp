@@ -5,6 +5,7 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace reapercore
 {
@@ -55,6 +56,21 @@ namespace reapercore
             return false;
         }
 
+        std::vector<std::uint8_t> allocated_slots;
+        std::vector<std::uint32_t> free_indices;
+        try
+        {
+            allocated_slots.assign(capacity_value, 0);
+            free_indices.reserve(capacity_value);
+            for (std::uint32_t index = capacity_value; index > 0; --index)
+                free_indices.push_back(index - 1);
+        }
+        catch (...)
+        {
+            logging.error("d3d12", "Failed to allocate SRV descriptor allocator bookkeeping.");
+            return false;
+        }
+
         m_logging = &logging;
         m_device = &device;
         m_heap = std::move(heap);
@@ -65,12 +81,8 @@ namespace reapercore
         m_allocated_count = 0;
         m_peak_allocated = 0;
         m_allocation_failures = 0;
-
-        m_allocated_slots.assign(m_capacity, 0);
-        m_free_indices.clear();
-        m_free_indices.reserve(m_capacity);
-        for (std::uint32_t index = m_capacity; index > 0; --index)
-            m_free_indices.push_back(index - 1);
+        m_allocated_slots = std::move(allocated_slots);
+        m_free_indices = std::move(free_indices);
 
         m_initialized.store(true, std::memory_order_release);
         m_logging->info("d3d12", "SRV descriptor allocator initialized.", {

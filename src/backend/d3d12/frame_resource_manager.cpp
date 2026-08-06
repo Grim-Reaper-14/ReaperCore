@@ -119,53 +119,30 @@ namespace reapercore
 
         const HRESULT allocator_result = frame.allocator->Reset();
         if (FAILED(allocator_result))
-        {
-            if (m_logging != nullptr)
-            {
-                m_logging->error("d3d12", "Failed to reset frame command allocator.", {
-                    {"hresult", std::to_string(static_cast<long long>(allocator_result))},
-                    {"frame_index", std::to_string(m_frame_index)}
-                });
-            }
             return false;
-        }
 
-        const HRESULT list_result = m_command_list->Reset(frame.allocator.Get(), nullptr);
-        if (FAILED(list_result))
-        {
-            if (m_logging != nullptr)
-            {
-                m_logging->error("d3d12", "Failed to reset graphics command list.", {
-                    {"hresult", std::to_string(static_cast<long long>(list_result))},
-                    {"frame_index", std::to_string(m_frame_index)}
-                });
-            }
-            return false;
-        }
-
-        return true;
+        return SUCCEEDED(m_command_list->Reset(frame.allocator.Get(), nullptr));
     }
 
-    bool D3D12_Frame_Resource_Manager::close_frame(
+    bool D3D12_Frame_Resource_Manager::close_frame() noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) ||
+            m_command_list.Get() == nullptr)
+        {
+            return false;
+        }
+
+        return SUCCEEDED(m_command_list->Close());
+    }
+
+    bool D3D12_Frame_Resource_Manager::mark_submitted(
         const std::uint64_t fence_value) noexcept
     {
         std::scoped_lock lock(m_mutex);
         if (!m_initialized.load(std::memory_order_acquire) ||
-            m_frames.empty() || m_command_list.Get() == nullptr || fence_value == 0)
+            m_frames.empty() || fence_value == 0)
         {
-            return false;
-        }
-
-        const HRESULT close_result = m_command_list->Close();
-        if (FAILED(close_result))
-        {
-            if (m_logging != nullptr)
-            {
-                m_logging->error("d3d12", "Failed to close graphics command list.", {
-                    {"hresult", std::to_string(static_cast<long long>(close_result))},
-                    {"frame_index", std::to_string(m_frame_index)}
-                });
-            }
             return false;
         }
 

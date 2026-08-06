@@ -65,7 +65,8 @@ namespace reapercore
             std::uint32_t frame_count = 3) noexcept;
         void shutdown() noexcept;
         bool begin_frame(D3D12_Fence_Manager& fence_manager) noexcept;
-        bool close_frame(std::uint64_t fence_value) noexcept;
+        bool close_frame() noexcept;
+        bool mark_submitted(std::uint64_t fence_value) noexcept;
         [[nodiscard]] ID3D12GraphicsCommandList* command_list() const noexcept;
         [[nodiscard]] D3D12_Frame_Context* current_frame() noexcept;
         [[nodiscard]] std::uint32_t frame_index() const noexcept;

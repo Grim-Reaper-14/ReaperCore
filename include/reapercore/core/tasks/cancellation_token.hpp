@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace reapercore
 {
@@ -15,31 +16,27 @@ namespace reapercore
 
         [[nodiscard]] bool cancellation_requested() const noexcept
         {
-            const bool primary_requested =
-                m_primary_state != nullptr &&
-                m_primary_state->load(std::memory_order_acquire);
-            const bool secondary_requested =
-                m_secondary_state != nullptr &&
-                m_secondary_state->load(std::memory_order_acquire);
-            return primary_requested || secondary_requested;
+            for (const auto& state : m_states)
+            {
+                if (state != nullptr && state->load(std::memory_order_acquire))
+                    return true;
+            }
+            return false;
         }
 
         explicit operator bool() const noexcept
         {
-            return m_primary_state != nullptr || m_secondary_state != nullptr;
+            return !m_states.empty();
         }
 
     private:
-        explicit Cancellation_Token(
-            std::shared_ptr<std::atomic_bool> primary_state,
-            std::shared_ptr<std::atomic_bool> secondary_state = {}) noexcept :
-            m_primary_state(std::move(primary_state)),
-            m_secondary_state(std::move(secondary_state))
+        explicit Cancellation_Token(std::shared_ptr<std::atomic_bool> state)
         {
+            if (state != nullptr)
+                m_states.emplace_back(std::move(state));
         }
 
-        std::shared_ptr<std::atomic_bool> m_primary_state;
-        std::shared_ptr<std::atomic_bool> m_secondary_state;
+        std::vector<std::shared_ptr<std::atomic_bool>> m_states;
 
         friend class Cancellation_Source;
         friend class Task_Manager;
@@ -53,7 +50,7 @@ namespace reapercore
         {
         }
 
-        [[nodiscard]] Cancellation_Token token() const noexcept
+        [[nodiscard]] Cancellation_Token token() const
         {
             return Cancellation_Token(m_state);
         }

@@ -14,13 +14,19 @@ add_library(ReaperCore SHARED
     src/bootstrap/dllmain.cpp
     src/core/application/application.cpp
     src/core/core/core.cpp
+    src/core/events/event_manager.cpp
     src/core/file_system/file_system_manager.cpp
     src/core/folder_system/folder_system_manager.cpp
     src/core/logging/logging_manager.cpp
     src/core/lua/lua_core_manager.cpp
     src/core/lua/reapercore_lua_system.cpp
+    src/core/services/service_manager.cpp
     src/core/settings_system/settings_system_manager.cpp
+    src/core/tasks/task_manager.cpp
     src/backend/backend.cpp
+    src/backend/d3d12/d3d12_backend.cpp
+    src/backend/hooking/hook_registry.cpp
+    src/backend/renderer/renderer.cpp
 )
 
 target_include_directories(ReaperCore

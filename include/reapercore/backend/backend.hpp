@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 
 namespace reapercore
 {
@@ -18,6 +19,17 @@ namespace reapercore
     class ReaperCore_Lua_System;
     class Settings_System_Manager;
     class Task_Manager;
+
+    struct Backend_ImGui_DX12_Attach_Info
+    {
+        HWND window{};
+        ID3D12Device* device{};
+        ID3D12CommandQueue* command_queue{};
+        int frames_in_flight{3};
+        DXGI_FORMAT rtv_format{DXGI_FORMAT_R8G8B8A8_UNORM};
+        DXGI_FORMAT dsv_format{DXGI_FORMAT_UNKNOWN};
+        std::uint32_t srv_descriptor_capacity{64};
+    };
 
     class Backend final
     {
@@ -31,6 +43,18 @@ namespace reapercore
         void run();
         void request_stop() noexcept;
         void shutdown() noexcept;
+
+        bool attach_imgui_dx12(
+            const Backend_ImGui_DX12_Attach_Info& info) noexcept;
+        void detach_imgui_dx12() noexcept;
+        bool begin_imgui_frame() noexcept;
+        bool render_imgui_frame(
+            const ImGui_DX12_Frame_Context& frame) noexcept;
+        bool handle_imgui_window_message(
+            HWND window,
+            UINT message,
+            WPARAM word_parameter,
+            LPARAM long_parameter) noexcept;
 
         [[nodiscard]] bool running() const noexcept;
         [[nodiscard]] D3D12_Backend& d3d12() noexcept;
@@ -50,6 +74,8 @@ namespace reapercore
         ImGui_Win32_DX12_Backend m_imgui_backend;
         Renderer m_renderer;
         Hook_Registry m_hooks;
+        mutable std::mutex m_imgui_attachment_mutex;
+        bool m_imgui_owns_d3d12_attachment{};
         std::atomic_bool m_running{false};
         std::chrono::milliseconds m_tick_interval{50};
         std::size_t m_main_thread_task_budget{64};

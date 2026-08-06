@@ -2,6 +2,7 @@
 
 #include "reapercore/backend/d3d12/d3d12_backend.hpp"
 #include "reapercore/backend/hooking/hook_registry.hpp"
+#include "reapercore/backend/imgui/imgui_layer.hpp"
 #include "reapercore/backend/renderer/renderer.hpp"
 
 #include <atomic>
@@ -32,6 +33,7 @@ namespace reapercore
 
         [[nodiscard]] bool running() const noexcept;
         [[nodiscard]] D3D12_Backend& d3d12() noexcept;
+        [[nodiscard]] ImGui_Layer& imgui() noexcept;
         [[nodiscard]] Renderer& renderer() noexcept;
         [[nodiscard]] Hook_Registry& hooks() noexcept;
 
@@ -42,6 +44,7 @@ namespace reapercore
         Event_Manager* m_events{};
         Task_Manager* m_tasks{};
         D3D12_Backend m_d3d12;
+        ImGui_Layer m_imgui;
         Renderer m_renderer;
         Hook_Registry m_hooks;
         std::atomic_bool m_running{false};

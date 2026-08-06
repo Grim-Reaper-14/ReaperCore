@@ -2,6 +2,7 @@
 #include "reapercore/core/logging/logging_manager.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace reapercore
 {

@@ -1,0 +1,381 @@
+#include "reapercore/backend/d3d12/execution_core.hpp"
+#include "reapercore/core/logging/logging_manager.hpp"
+
+#include <algorithm>
+#include <limits>
+#include <string>
+
+namespace reapercore
+{
+    bool D3D12_Fence_Manager::initialize(
+        Logging_Manager& logging,
+        ID3D12Device& device) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_initialized.load(std::memory_order_acquire))
+            return true;
+
+        Microsoft::WRL::ComPtr<ID3D12Fence> fence;
+        const HRESULT fence_result = device.CreateFence(
+            0,
+            D3D12_FENCE_FLAG_NONE,
+            IID_PPV_ARGS(fence.ReleaseAndGetAddressOf()));
+        if (FAILED(fence_result))
+        {
+            logging.error("d3d12", "Failed to create GPU fence.", {
+                {"hresult", std::to_string(static_cast<long long>(fence_result))}
+            });
+            return false;
+        }
+
+        const HANDLE event_handle = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (event_handle == nullptr)
+        {
+            logging.error("d3d12", "Failed to create GPU fence event.", {
+                {"win32_error", std::to_string(GetLastError())}
+            });
+            return false;
+        }
+
+        m_logging = &logging;
+        m_fence = std::move(fence);
+        m_event = event_handle;
+        m_next_value.store(1, std::memory_order_release);
+        m_initialized.store(true, std::memory_order_release);
+        m_logging->info("d3d12", "Fence manager initialized.");
+        return true;
+    }
+
+    void D3D12_Fence_Manager::shutdown() noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.exchange(false, std::memory_order_acq_rel))
+            return;
+
+        if (m_event != nullptr)
+        {
+            CloseHandle(m_event);
+            m_event = nullptr;
+        }
+        m_fence.Reset();
+        m_next_value.store(1, std::memory_order_release);
+
+        if (m_logging != nullptr)
+            m_logging->info("d3d12", "Fence manager stopped.");
+        m_logging = nullptr;
+    }
+
+    std::uint64_t D3D12_Fence_Manager::signal(
+        ID3D12CommandQueue& queue) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) || m_fence.Get() == nullptr)
+            return 0;
+
+        const auto value = m_next_value.fetch_add(1, std::memory_order_acq_rel);
+        const HRESULT result = queue.Signal(m_fence.Get(), value);
+        if (FAILED(result))
+        {
+            if (m_logging != nullptr)
+            {
+                m_logging->error("d3d12", "Failed to signal GPU fence.", {
+                    {"hresult", std::to_string(static_cast<long long>(result))},
+                    {"fence_value", std::to_string(value)}
+                });
+            }
+            return 0;
+        }
+        return value;
+    }
+
+    bool D3D12_Fence_Manager::wait(
+        const std::uint64_t value,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) ||
+            m_fence.Get() == nullptr || m_event == nullptr || value == 0)
+        {
+            return false;
+        }
+
+        if (m_fence->GetCompletedValue() >= value)
+            return true;
+
+        const HRESULT result = m_fence->SetEventOnCompletion(value, m_event);
+        if (FAILED(result))
+        {
+            if (m_logging != nullptr)
+            {
+                m_logging->error("d3d12", "Failed to arm GPU fence event.", {
+                    {"hresult", std::to_string(static_cast<long long>(result))},
+                    {"fence_value", std::to_string(value)}
+                });
+            }
+            return false;
+        }
+
+        const DWORD wait_result = WaitForSingleObject(m_event, timeout_ms);
+        if (wait_result == WAIT_OBJECT_0)
+            return true;
+
+        if (m_logging != nullptr)
+        {
+            m_logging->error("d3d12", "GPU fence wait failed.", {
+                {"wait_result", std::to_string(wait_result)},
+                {"fence_value", std::to_string(value)}
+            });
+        }
+        return false;
+    }
+
+    bool D3D12_Fence_Manager::flush(
+        ID3D12CommandQueue& queue,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        const auto value = signal(queue);
+        return value != 0 && wait(value, timeout_ms);
+    }
+
+    std::uint64_t D3D12_Fence_Manager::completed_value() const noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_fence.Get() != nullptr ? m_fence->GetCompletedValue() : 0;
+    }
+
+    bool D3D12_Fence_Manager::initialized() const noexcept
+    {
+        return m_initialized.load(std::memory_order_acquire);
+    }
+
+    bool D3D12_Command_Queue_Manager::initialize(
+        Logging_Manager& logging,
+        ID3D12Device& device) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_initialized.load(std::memory_order_acquire))
+            return true;
+
+        D3D12_COMMAND_QUEUE_DESC description{};
+        description.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        description.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+        description.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+        description.NodeMask = 0;
+
+        Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue;
+        const HRESULT result = device.CreateCommandQueue(
+            &description,
+            IID_PPV_ARGS(queue.ReleaseAndGetAddressOf()));
+        if (FAILED(result))
+        {
+            logging.error("d3d12", "Failed to create graphics command queue.", {
+                {"hresult", std::to_string(static_cast<long long>(result))}
+            });
+            return false;
+        }
+
+        m_logging = &logging;
+        m_queue = std::move(queue);
+        m_initialized.store(true, std::memory_order_release);
+        m_logging->info("d3d12", "Graphics command queue initialized.");
+        return true;
+    }
+
+    void D3D12_Command_Queue_Manager::shutdown() noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.exchange(false, std::memory_order_acq_rel))
+            return;
+
+        m_queue.Reset();
+        if (m_logging != nullptr)
+            m_logging->info("d3d12", "Graphics command queue stopped.");
+        m_logging = nullptr;
+    }
+
+    bool D3D12_Command_Queue_Manager::execute(
+        ID3D12CommandList* const* lists,
+        const std::size_t count) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) ||
+            m_queue.Get() == nullptr || lists == nullptr || count == 0 ||
+            count > static_cast<std::size_t>(std::numeric_limits<UINT>::max()))
+        {
+            return false;
+        }
+
+        m_queue->ExecuteCommandLists(static_cast<UINT>(count), lists);
+        return true;
+    }
+
+    ID3D12CommandQueue* D3D12_Command_Queue_Manager::queue() const noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_queue.Get();
+    }
+
+    bool D3D12_Command_Queue_Manager::initialized() const noexcept
+    {
+        return m_initialized.load(std::memory_order_acquire);
+    }
+
+    bool D3D12_Frame_Resource_Manager::initialize(
+        Logging_Manager& logging,
+        ID3D12Device& device,
+        const std::uint32_t frame_count_value) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_initialized.load(std::memory_order_acquire))
+            return true;
+        if (frame_count_value == 0)
+            return false;
+
+        std::vector<D3D12_Frame_Context> frames;
+        try
+        {
+            frames.resize(frame_count_value);
+        }
+        catch (...)
+        {
+            logging.error("d3d12", "Failed to allocate frame contexts.");
+            return false;
+        }
+
+        for (auto& frame : frames)
+        {
+            const HRESULT result = device.CreateCommandAllocator(
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                IID_PPV_ARGS(frame.allocator.ReleaseAndGetAddressOf()));
+            if (FAILED(result))
+            {
+                logging.error("d3d12", "Failed to create frame command allocator.", {
+                    {"hresult", std::to_string(static_cast<long long>(result))}
+                });
+                return false;
+            }
+        }
+
+        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> command_list;
+        const HRESULT list_result = device.CreateCommandList(
+            0,
+            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            frames.front().allocator.Get(),
+            nullptr,
+            IID_PPV_ARGS(command_list.ReleaseAndGetAddressOf()));
+        if (FAILED(list_result))
+        {
+            logging.error("d3d12", "Failed to create graphics command list.", {
+                {"hresult", std::to_string(static_cast<long long>(list_result))}
+            });
+            return false;
+        }
+
+        const HRESULT close_result = command_list->Close();
+        if (FAILED(close_result))
+        {
+            logging.error("d3d12", "Failed to close initial graphics command list.", {
+                {"hresult", std::to_string(static_cast<long long>(close_result))}
+            });
+            return false;
+        }
+
+        m_logging = &logging;
+        m_frames = std::move(frames);
+        m_command_list = std::move(command_list);
+        m_frame_index = 0;
+        m_initialized.store(true, std::memory_order_release);
+        m_logging->info("d3d12", "Frame resource manager initialized.", {
+            {"frame_count", std::to_string(frame_count_value)}
+        });
+        return true;
+    }
+
+    void D3D12_Frame_Resource_Manager::shutdown() noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.exchange(false, std::memory_order_acq_rel))
+            return;
+
+        m_command_list.Reset();
+        m_frames.clear();
+        m_frame_index = 0;
+        if (m_logging != nullptr)
+            m_logging->info("d3d12", "Frame resource manager stopped.");
+        m_logging = nullptr;
+    }
+
+    bool D3D12_Frame_Resource_Manager::begin_frame(
+        D3D12_Fence_Manager& fence_manager) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) ||
+            m_frames.empty() || m_command_list.Get() == nullptr)
+        {
+            return false;
+        }
+
+        m_frame_index = (m_frame_index + 1) % static_cast<std::uint32_t>(m_frames.size());
+        auto& frame = m_frames[m_frame_index];
+        if (frame.fence_value != 0 &&
+            fence_manager.completed_value() < frame.fence_value &&
+            !fence_manager.wait(frame.fence_value))
+        {
+            return false;
+        }
+
+        const HRESULT allocator_result = frame.allocator->Reset();
+        if (FAILED(allocator_result))
+            return false;
+
+        const HRESULT list_result = m_command_list->Reset(frame.allocator.Get(), nullptr);
+        return SUCCEEDED(list_result);
+    }
+
+    bool D3D12_Frame_Resource_Manager::close_frame(
+        const std::uint64_t fence_value) noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_initialized.load(std::memory_order_acquire) ||
+            m_frames.empty() || m_command_list.Get() == nullptr || fence_value == 0)
+        {
+            return false;
+        }
+
+        const HRESULT result = m_command_list->Close();
+        if (FAILED(result))
+            return false;
+
+        m_frames[m_frame_index].fence_value = fence_value;
+        return true;
+    }
+
+    ID3D12GraphicsCommandList* D3D12_Frame_Resource_Manager::command_list() const noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_command_list.Get();
+    }
+
+    D3D12_Frame_Context* D3D12_Frame_Resource_Manager::current_frame() noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_frames.empty() ? nullptr : &m_frames[m_frame_index];
+    }
+
+    std::uint32_t D3D12_Frame_Resource_Manager::frame_index() const noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_frame_index;
+    }
+
+    std::uint32_t D3D12_Frame_Resource_Manager::frame_count() const noexcept
+    {
+        std::scoped_lock lock(m_mutex);
+        return static_cast<std::uint32_t>(m_frames.size());
+    }
+
+    bool D3D12_Frame_Resource_Manager::initialized() const noexcept
+    {
+        return m_initialized.load(std::memory_order_acquire);
+    }
+}

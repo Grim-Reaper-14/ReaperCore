@@ -8,6 +8,7 @@
 #include <string_view>
 #include <unordered_map>
 
+struct ImDrawData;
 struct ImGuiContext;
 
 namespace reapercore
@@ -29,6 +30,12 @@ namespace reapercore
         bool initialize(Logging_Manager& logging) noexcept;
         void shutdown() noexcept;
 
+        bool begin_frame(
+            float delta_seconds,
+            float display_width,
+            float display_height) noexcept;
+        void end_frame() noexcept;
+
         [[nodiscard]] Draw_Callback_Id add_draw_callback(Draw_Callback callback);
         [[nodiscard]] bool remove_draw_callback(Draw_Callback_Id id) noexcept;
         void clear_draw_callbacks() noexcept;
@@ -37,9 +44,11 @@ namespace reapercore
         void make_current() noexcept;
 
         [[nodiscard]] bool initialized() const noexcept;
+        [[nodiscard]] bool frame_active() const noexcept;
         [[nodiscard]] std::size_t callback_count() const noexcept;
         [[nodiscard]] ImGuiContext* context() noexcept;
         [[nodiscard]] const ImGuiContext* context() const noexcept;
+        [[nodiscard]] ImDrawData* draw_data() noexcept;
         [[nodiscard]] std::string_view version() const noexcept;
 
     private:
@@ -51,6 +60,7 @@ namespace reapercore
         std::unordered_map<Draw_Callback_Id, Draw_Callback> m_draw_callbacks;
 
         std::atomic_bool m_initialized{false};
+        std::atomic_bool m_frame_active{false};
         std::atomic_uint64_t m_next_callback_id{1};
     };
 }

@@ -48,6 +48,7 @@ target_compile_definitions(ReaperCore_ImGui
 target_link_libraries(ReaperCore_ImGui
     PUBLIC
         d3d12
+        d3dcompiler
         dxgi
         dwmapi
 )

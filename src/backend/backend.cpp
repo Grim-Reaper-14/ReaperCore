@@ -87,8 +87,23 @@ namespace reapercore
             return false;
         }
 
+        if (!m_imgui_textures.initialize(logging, m_d3d12))
+        {
+            m_imgui_backend.shutdown();
+            m_imgui.shutdown();
+            m_d3d12.shutdown();
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
         if (!m_renderer.initialize(logging, m_d3d12))
         {
+            m_imgui_textures.shutdown();
             m_imgui_backend.shutdown();
             m_imgui.shutdown();
             m_d3d12.shutdown();
@@ -155,6 +170,7 @@ namespace reapercore
 
         m_renderer.shutdown();
         detach_imgui_dx12();
+        m_imgui_textures.shutdown();
         m_imgui_backend.shutdown();
         m_imgui.shutdown();
         m_d3d12.shutdown();
@@ -246,6 +262,8 @@ namespace reapercore
     {
         std::scoped_lock lock(m_imgui_attachment_mutex);
         const bool was_attached = m_imgui_backend.attached();
+
+        m_imgui_textures.clear();
         m_imgui_backend.detach();
 
         if (m_imgui_owns_d3d12_attachment)
@@ -281,6 +299,39 @@ namespace reapercore
             message,
             word_parameter,
             long_parameter);
+    }
+
+    std::optional<ImGui_DX12_Texture_Handle>
+    Backend::register_imgui_texture(
+        ID3D12Resource& resource,
+        const D3D12_SHADER_RESOURCE_VIEW_DESC* description) noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        if (!m_imgui_backend.attached())
+            return std::nullopt;
+        return m_imgui_textures.register_texture(resource, description);
+    }
+
+    bool Backend::unregister_imgui_texture(
+        const ImGui_DX12_Texture_Id id) noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_textures.unregister_texture(id);
+    }
+
+    std::optional<ImGui_DX12_Texture_Handle>
+    Backend::find_imgui_texture(
+        const ImGui_DX12_Texture_Id id) const noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_textures.find(id);
+    }
+
+    ImGui_DX12_Texture_Metrics
+    Backend::imgui_texture_metrics() const noexcept
+    {
+        std::scoped_lock lock(m_imgui_attachment_mutex);
+        return m_imgui_textures.metrics();
     }
 
     bool Backend::running() const noexcept

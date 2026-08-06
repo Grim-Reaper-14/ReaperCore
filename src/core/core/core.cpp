@@ -71,17 +71,46 @@ namespace reapercore
         if (!m_logging.initialize(std::move(logging_config)))
             return false;
 
-        if (!m_lua.initialize(m_files, m_folders, m_settings, m_logging))
+        const auto task_worker_count = bounded_size(
+            m_settings.get_int("tasks.worker_count", 0),
+            0,
+            256,
+            0);
+        const auto task_queue_capacity = bounded_size(
+            m_settings.get_int("tasks.queue_capacity", 8192),
+            128,
+            1'048'576,
+            8192);
+
+        if (!m_tasks.initialize(
+                m_logging,
+                m_events,
+                task_worker_count,
+                task_queue_capacity))
         {
-            m_logging.error("core", "ReaperCore_Lua_System failed to initialize.");
+            m_logging.error("core", "Task_Manager failed to initialize.");
             m_logging.shutdown();
             return false;
         }
 
-        if (!m_backend.initialize(m_logging, m_settings, m_lua, m_events))
+        if (!m_lua.initialize(m_files, m_folders, m_settings, m_logging))
+        {
+            m_logging.error("core", "ReaperCore_Lua_System failed to initialize.");
+            m_tasks.shutdown();
+            m_logging.shutdown();
+            return false;
+        }
+
+        if (!m_backend.initialize(
+                m_logging,
+                m_settings,
+                m_lua,
+                m_events,
+                m_tasks))
         {
             m_logging.error("core", "Backend failed to initialize.");
             m_lua.shutdown();
+            m_tasks.shutdown();
             m_logging.shutdown();
             return false;
         }
@@ -90,7 +119,8 @@ namespace reapercore
         m_events.publish(Application_Started_Event{});
         m_logging.info("core", "Core initialized.", {
             {"root", m_folders.root().string()},
-            {"settings", m_settings.settings_file().string()}
+            {"settings", m_settings.settings_file().string()},
+            {"task_workers", std::to_string(m_tasks.worker_count())}
         });
         return true;
     }
@@ -108,6 +138,7 @@ namespace reapercore
 
         m_events.publish(Application_Stopping_Event{});
         m_backend.shutdown();
+        m_tasks.shutdown();
         m_events.process_deferred();
         m_events.clear();
         m_lua.shutdown();
@@ -122,6 +153,7 @@ namespace reapercore
     Settings_System_Manager& Core::settings() noexcept { return m_settings; }
     Logging_Manager& Core::logging() noexcept { return m_logging; }
     Event_Manager& Core::events() noexcept { return m_events; }
+    Task_Manager& Core::tasks() noexcept { return m_tasks; }
     ReaperCore_Lua_System& Core::lua() noexcept { return m_lua; }
     Backend& Core::backend() noexcept { return m_backend; }
 }

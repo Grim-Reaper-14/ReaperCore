@@ -26,6 +26,8 @@ add_library(ReaperCore_ImGui STATIC
     ${dear_imgui_SOURCE_DIR}/imgui_draw.cpp
     ${dear_imgui_SOURCE_DIR}/imgui_tables.cpp
     ${dear_imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${dear_imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+    ${dear_imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
 )
 
 target_include_directories(ReaperCore_ImGui
@@ -34,6 +36,21 @@ target_include_directories(ReaperCore_ImGui
 )
 
 target_compile_features(ReaperCore_ImGui PUBLIC cxx_std_20)
+
+target_compile_definitions(ReaperCore_ImGui
+    PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+)
+
+target_link_libraries(ReaperCore_ImGui
+    PUBLIC
+        d3d12
+        dxgi
+        dwmapi
+)
 
 if(MSVC)
     target_compile_options(ReaperCore_ImGui PRIVATE /W3 /permissive- /EHsc /utf-8)
@@ -56,6 +73,7 @@ add_library(ReaperCore SHARED
     src/backend/d3d12/d3d12_backend.cpp
     src/backend/hooking/hook_registry.cpp
     src/backend/imgui/imgui_layer.cpp
+    src/backend/imgui/win32_dx12_backend.cpp
     src/backend/renderer/renderer.cpp
 )
 

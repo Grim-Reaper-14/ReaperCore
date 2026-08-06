@@ -36,6 +36,7 @@ namespace reapercore
             float display_width,
             float display_height) noexcept;
         void end_frame() noexcept;
+        void cancel_frame() noexcept;
 
         [[nodiscard]] Draw_Callback_Id add_draw_callback(Draw_Callback callback);
         [[nodiscard]] bool remove_draw_callback(Draw_Callback_Id id) noexcept;

@@ -62,8 +62,21 @@ namespace reapercore
             return false;
         }
 
+        if (!m_imgui.initialize(logging))
+        {
+            m_d3d12.shutdown();
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
         if (!m_renderer.initialize(logging, m_d3d12))
         {
+            m_imgui.shutdown();
             m_d3d12.shutdown();
             m_hooks.shutdown();
             m_tasks = nullptr;
@@ -77,7 +90,8 @@ namespace reapercore
         m_running.store(true, std::memory_order_release);
         m_logging->info("backend", "Backend initialized.", {
             {"tick_ms", std::to_string(m_tick_interval.count())},
-            {"main_thread_task_budget", std::to_string(m_main_thread_task_budget)}
+            {"main_thread_task_budget", std::to_string(m_main_thread_task_budget)},
+            {"imgui_version", std::string(m_imgui.version())}
         });
         return true;
     }
@@ -126,6 +140,7 @@ namespace reapercore
             m_events->process_deferred();
 
         m_renderer.shutdown();
+        m_imgui.shutdown();
         m_d3d12.shutdown();
         m_hooks.shutdown();
 
@@ -151,6 +166,11 @@ namespace reapercore
     D3D12_Backend& Backend::d3d12() noexcept
     {
         return m_d3d12;
+    }
+
+    ImGui_Layer& Backend::imgui() noexcept
+    {
+        return m_imgui;
     }
 
     Renderer& Backend::renderer() noexcept

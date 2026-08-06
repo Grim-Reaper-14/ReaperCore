@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <future>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -74,7 +74,6 @@ namespace reapercore
 
         static bool higher_priority(const Queued_Task& left, const Queued_Task& right) noexcept;
         void worker_loop(std::size_t worker_index);
-        std::optional<Queued_Task> take_ready_worker_task();
         std::optional<Queued_Task> take_ready_main_thread_task();
         Task_Id enqueue(Task_Descriptor descriptor);
         void execute(Queued_Task& task, bool worker_thread) noexcept;

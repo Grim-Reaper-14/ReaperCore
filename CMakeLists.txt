@@ -71,8 +71,11 @@ add_library(ReaperCore SHARED
     src/core/settings_system/settings_system_manager.cpp
     src/core/tasks/task_manager.cpp
     src/backend/backend.cpp
+    src/backend/d3d12/command_queue_manager.cpp
     src/backend/d3d12/d3d12_backend.cpp
+    src/backend/d3d12/device_manager.cpp
     src/backend/d3d12/fence_manager.cpp
+    src/backend/d3d12/frame_resource_manager.cpp
     src/backend/d3d12/srv_descriptor_allocator.cpp
     src/backend/hooking/hook_registry.cpp
     src/backend/imgui/dx12_texture_registry.cpp

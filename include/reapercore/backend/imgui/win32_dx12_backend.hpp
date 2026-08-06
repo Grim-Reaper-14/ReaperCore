@@ -38,6 +38,17 @@ namespace reapercore
         ImGui_Srv_Descriptor_Free free_srv_descriptor{};
     };
 
+    struct ImGui_DX12_Frame_Context
+    {
+        ID3D12GraphicsCommandList* command_list{};
+        ID3D12Resource* render_target{};
+        D3D12_CPU_DESCRIPTOR_HANDLE render_target_view{};
+        D3D12_RESOURCE_STATES state_before{D3D12_RESOURCE_STATE_PRESENT};
+        D3D12_RESOURCE_STATES state_after{D3D12_RESOURCE_STATE_PRESENT};
+        bool transition_render_target{};
+        bool bind_render_target{};
+    };
+
     class ImGui_Win32_DX12_Backend final
     {
     public:
@@ -55,6 +66,7 @@ namespace reapercore
 
         bool begin_frame() noexcept;
         bool render(ID3D12GraphicsCommandList* command_list) noexcept;
+        bool render(const ImGui_DX12_Frame_Context& frame) noexcept;
         bool handle_window_message(
             HWND window,
             UINT message,

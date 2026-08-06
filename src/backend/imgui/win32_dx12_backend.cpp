@@ -5,6 +5,8 @@
 #include <backends/imgui_impl_dx12.h>
 #include <backends/imgui_impl_win32.h>
 
+#include <string>
+
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND window,
     UINT message,
@@ -170,6 +172,10 @@ namespace reapercore
         if (draw_data == nullptr)
             return false;
 
+        ID3D12DescriptorHeap* descriptor_heaps[] = {
+            m_attach_info.srv_descriptor_heap
+        };
+        command_list->SetDescriptorHeaps(1, descriptor_heaps);
         ImGui_ImplDX12_RenderDrawData(draw_data, command_list);
         return true;
     }

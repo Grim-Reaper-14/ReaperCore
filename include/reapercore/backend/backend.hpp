@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 
 namespace reapercore
@@ -14,6 +15,7 @@ namespace reapercore
     class Logging_Manager;
     class ReaperCore_Lua_System;
     class Settings_System_Manager;
+    class Task_Manager;
 
     class Backend final
     {
@@ -22,7 +24,8 @@ namespace reapercore
             Logging_Manager& logging,
             Settings_System_Manager& settings,
             ReaperCore_Lua_System& lua,
-            Event_Manager& events) noexcept;
+            Event_Manager& events,
+            Task_Manager& tasks) noexcept;
         void run();
         void request_stop() noexcept;
         void shutdown() noexcept;
@@ -37,11 +40,13 @@ namespace reapercore
         Settings_System_Manager* m_settings{};
         ReaperCore_Lua_System* m_lua{};
         Event_Manager* m_events{};
+        Task_Manager* m_tasks{};
         D3D12_Backend m_d3d12;
         Renderer m_renderer;
         Hook_Registry m_hooks;
         std::atomic_bool m_running{false};
         std::chrono::milliseconds m_tick_interval{50};
+        std::size_t m_main_thread_task_budget{64};
         std::uint64_t m_tick_index{};
     };
 }

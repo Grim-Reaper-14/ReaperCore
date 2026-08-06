@@ -3,6 +3,7 @@
 #include "reapercore/core/services/service.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>

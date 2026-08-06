@@ -109,7 +109,7 @@ namespace reapercore
         descriptor.name = std::move(name);
         descriptor.priority = priority;
         descriptor.queue = Task_Queue::worker;
-        descriptor.ready_at = std::chrono::steady_clock::now();
+        descriptor.ready_at = std::chrono::steady_clock::time_point::min();
         descriptor.cancellation = std::move(cancellation);
         descriptor.function = std::move(function);
         return enqueue(std::move(descriptor));
@@ -125,7 +125,7 @@ namespace reapercore
         descriptor.name = std::move(name);
         descriptor.priority = priority;
         descriptor.queue = Task_Queue::main_thread;
-        descriptor.ready_at = std::chrono::steady_clock::now();
+        descriptor.ready_at = std::chrono::steady_clock::time_point::min();
         descriptor.cancellation = std::move(cancellation);
         descriptor.function = std::move(function);
         return enqueue(std::move(descriptor));
@@ -143,8 +143,9 @@ namespace reapercore
         descriptor.name = std::move(name);
         descriptor.priority = priority;
         descriptor.queue = queue;
-        descriptor.ready_at = std::chrono::steady_clock::now() +
-            std::max(delay, std::chrono::milliseconds::zero());
+        descriptor.ready_at = delay <= std::chrono::milliseconds::zero()
+            ? std::chrono::steady_clock::time_point::min()
+            : std::chrono::steady_clock::now() + delay;
         descriptor.cancellation = std::move(cancellation);
         descriptor.function = std::move(function);
         return enqueue(std::move(descriptor));

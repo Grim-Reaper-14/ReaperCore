@@ -74,8 +74,22 @@ namespace reapercore
             return false;
         }
 
+        if (!m_imgui_backend.initialize(logging, m_imgui))
+        {
+            m_imgui.shutdown();
+            m_d3d12.shutdown();
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
         if (!m_renderer.initialize(logging, m_d3d12))
         {
+            m_imgui_backend.shutdown();
             m_imgui.shutdown();
             m_d3d12.shutdown();
             m_hooks.shutdown();
@@ -140,6 +154,7 @@ namespace reapercore
             m_events->process_deferred();
 
         m_renderer.shutdown();
+        m_imgui_backend.shutdown();
         m_imgui.shutdown();
         m_d3d12.shutdown();
         m_hooks.shutdown();
@@ -171,6 +186,11 @@ namespace reapercore
     ImGui_Layer& Backend::imgui() noexcept
     {
         return m_imgui;
+    }
+
+    ImGui_Win32_DX12_Backend& Backend::imgui_backend() noexcept
+    {
+        return m_imgui_backend;
     }
 
     Renderer& Backend::renderer() noexcept

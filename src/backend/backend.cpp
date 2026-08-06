@@ -4,6 +4,7 @@
 #include "reapercore/core/logging/logging_manager.hpp"
 #include "reapercore/core/lua/reapercore_lua_system.hpp"
 #include "reapercore/core/settings_system/settings_system_manager.hpp"
+#include "reapercore/core/tasks/task_manager.hpp"
 
 #include <Windows.h>
 
@@ -16,20 +17,67 @@ namespace reapercore
         Logging_Manager& logging,
         Settings_System_Manager& settings,
         ReaperCore_Lua_System& lua,
-        Event_Manager& events) noexcept
+        Event_Manager& events,
+        Task_Manager& tasks) noexcept
     {
+        if (running())
+            return true;
+
         m_logging = &logging;
         m_settings = &settings;
         m_lua = &lua;
         m_events = &events;
+        m_tasks = &tasks;
         m_tick_index = 0;
 
         const int tick_ms = settings.get_int("backend.tick_ms", 50);
         m_tick_interval = std::chrono::milliseconds(tick_ms > 0 ? tick_ms : 50);
-        m_running.store(true, std::memory_order_release);
 
+        const int task_budget = settings.get_int(
+            "backend.main_thread_tasks_per_tick",
+            64);
+        m_main_thread_task_budget =
+            task_budget > 0 && task_budget <= 4096
+                ? static_cast<std::size_t>(task_budget)
+                : 64;
+
+        if (!m_hooks.initialize(logging))
+        {
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
+        if (!m_d3d12.initialize(logging))
+        {
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
+        if (!m_renderer.initialize(logging, m_d3d12))
+        {
+            m_d3d12.shutdown();
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
+        m_running.store(true, std::memory_order_release);
         m_logging->info("backend", "Backend initialized.", {
-            {"tick_ms", std::to_string(m_tick_interval.count())}
+            {"tick_ms", std::to_string(m_tick_interval.count())},
+            {"main_thread_task_budget", std::to_string(m_main_thread_task_budget)}
         });
         return true;
     }
@@ -45,15 +93,22 @@ namespace reapercore
                 request_stop();
             }
 
+            if (m_tasks != nullptr)
+                m_tasks->process_main_thread(m_main_thread_task_budget);
+
             if (m_events != nullptr)
             {
                 m_events->process_deferred();
-                m_events->publish(Backend_Tick_Event{++m_tick_index});
+
+                Backend_Tick_Event tick_event;
+                tick_event.tick_index = ++m_tick_index;
+                m_events->publish(tick_event);
             }
 
             if (m_lua != nullptr)
                 m_lua->tick();
 
+            m_renderer.render_frame();
             std::this_thread::sleep_for(m_tick_interval);
         }
     }
@@ -70,11 +125,18 @@ namespace reapercore
         if (m_events != nullptr)
             m_events->process_deferred();
 
+        m_renderer.shutdown();
+        m_d3d12.shutdown();
+        m_hooks.shutdown();
+
         if (m_logging != nullptr)
+        {
             m_logging->info("backend", "Backend stopped.", {
                 {"ticks", std::to_string(m_tick_index)}
             });
+        }
 
+        m_tasks = nullptr;
         m_events = nullptr;
         m_lua = nullptr;
         m_settings = nullptr;

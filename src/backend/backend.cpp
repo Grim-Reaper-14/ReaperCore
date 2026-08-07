@@ -5,6 +5,7 @@
 #include "reapercore/core/lua/reapercore_lua_system.hpp"
 #include "reapercore/core/settings_system/settings_system_manager.hpp"
 #include "reapercore/core/tasks/task_manager.hpp"
+#include "reapercore/ui/menu/menu.hpp"
 
 #include <Windows.h>
 
@@ -13,6 +14,11 @@
 
 namespace reapercore
 {
+    namespace
+    {
+        Menu g_menu;
+    }
+
     bool Backend::initialize(
         Logging_Manager& logging,
         Settings_System_Manager& settings,
@@ -116,11 +122,37 @@ namespace reapercore
             return false;
         }
 
+        g_menu.set_unload_callback([this]() {
+            if (m_events != nullptr)
+                m_events->publish(Shutdown_Requested_Event{});
+            request_stop();
+        });
+
+        if (m_imgui.add_draw_callback([]() {
+                g_menu.draw();
+            }) == 0)
+        {
+            logging.error("ui", "Failed to register ReaperCore menu draw callback.");
+            m_renderer.shutdown();
+            m_imgui_textures.shutdown();
+            m_imgui_backend.shutdown();
+            m_imgui.shutdown();
+            m_d3d12.shutdown();
+            m_hooks.shutdown();
+            m_tasks = nullptr;
+            m_events = nullptr;
+            m_lua = nullptr;
+            m_settings = nullptr;
+            m_logging = nullptr;
+            return false;
+        }
+
         m_running.store(true, std::memory_order_release);
         m_logging->info("backend", "Backend initialized.", {
             {"tick_ms", std::to_string(m_tick_interval.count())},
             {"main_thread_task_budget", std::to_string(m_main_thread_task_budget)},
-            {"imgui_version", std::string(m_imgui.version())}
+            {"imgui_version", std::string(m_imgui.version())},
+            {"menu_toggle", "F5"}
         });
         return true;
     }

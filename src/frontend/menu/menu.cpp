@@ -1,5 +1,14 @@
 #include "reapercore/frontend/menu/menu.hpp"
 
+#include "reapercore/frontend/menu/pages/home_page.hpp"
+#include "reapercore/frontend/menu/pages/misc_page.hpp"
+#include "reapercore/frontend/menu/pages/network_page.hpp"
+#include "reapercore/frontend/menu/pages/scripts_page.hpp"
+#include "reapercore/frontend/menu/pages/self_page.hpp"
+#include "reapercore/frontend/menu/pages/settings_page.hpp"
+#include "reapercore/frontend/menu/pages/vehicle_page.hpp"
+#include "reapercore/frontend/menu/pages/world_page.hpp"
+
 #include <Windows.h>
 #include <imgui.h>
 
@@ -7,9 +16,22 @@
 
 namespace reapercore
 {
+    namespace
+    {
+        Home_Page g_home_page;
+        Self_Page g_self_page;
+        Vehicle_Page g_vehicle_page;
+        World_Page g_world_page;
+        Network_Page g_network_page;
+        Scripts_Page g_scripts_page;
+        Misc_Page g_misc_page;
+        Settings_Page g_settings_page;
+    }
+
     void Frontend_Menu::set_unload_callback(Unload_Callback callback)
     {
         m_unload_callback = std::move(callback);
+        g_settings_page.set_unload_callback(m_unload_callback);
     }
 
     void Frontend_Menu::draw() noexcept
@@ -45,7 +67,6 @@ namespace reapercore
         ImGui::SameLine(0.0F, 0.0F);
         draw_content(body_height);
         draw_footer();
-        draw_unload_confirmation();
 
         ImGui::End();
     }
@@ -188,30 +209,7 @@ namespace reapercore
 
     void Frontend_Menu::draw_unload_confirmation() noexcept
     {
-        if (!ImGui::BeginPopupModal(
-                "Unload ReaperCore?",
-                nullptr,
-                ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            return;
-        }
-
-        ImGui::TextUnformatted("Are you sure you want to unload ReaperCore?");
-        ImGui::TextDisabled("Hooks, native callbacks, ImGui, and renderer resources will be shut down cleanly.");
-        ImGui::Separator();
-
-        if (ImGui::Button("Unload", ImVec2(120.0F, 0.0F)))
-        {
-            ImGui::CloseCurrentPopup();
-            if (m_unload_callback)
-                m_unload_callback();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120.0F, 0.0F)))
-            ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
+        // Unload confirmation is owned by Settings_Page.
     }
 
     void Frontend_Menu::sidebar_button(const Navigation_Item& item) noexcept
@@ -259,23 +257,33 @@ namespace reapercore
 
     void Frontend_Menu::draw_current_page() noexcept
     {
-        if (m_page != Frontend_Menu_Page::settings)
+        switch (m_page)
         {
-            ImGui::TextDisabled("Frontend page module will render here.");
-            return;
+        case Frontend_Menu_Page::home:
+            g_home_page.draw();
+            break;
+        case Frontend_Menu_Page::self:
+            g_self_page.draw();
+            break;
+        case Frontend_Menu_Page::vehicle:
+            g_vehicle_page.draw();
+            break;
+        case Frontend_Menu_Page::world:
+            g_world_page.draw();
+            break;
+        case Frontend_Menu_Page::network:
+            g_network_page.draw();
+            break;
+        case Frontend_Menu_Page::scripts:
+            g_scripts_page.draw();
+            break;
+        case Frontend_Menu_Page::misc:
+            g_misc_page.draw();
+            break;
+        case Frontend_Menu_Page::settings:
+            g_settings_page.draw();
+            break;
         }
-
-        ImGui::TextDisabled("Settings modules will include General, Appearance, Themes, Fonts, Images, and Style Editor.");
-        ImGui::Dummy(ImVec2(0.0F, 24.0F));
-        ImGui::SeparatorText("System");
-        ImGui::TextDisabled("Unload ReaperCore and cleanly release hooks and renderer resources.");
-
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45F, 0.06F, 0.08F, 1.0F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.65F, 0.08F, 0.11F, 1.0F));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.78F, 0.10F, 0.13F, 1.0F));
-        if (ImGui::Button("Unload ReaperCore", ImVec2(180.0F, 38.0F)))
-            ImGui::OpenPopup("Unload ReaperCore?");
-        ImGui::PopStyleColor(3);
     }
 
     const char* Frontend_Menu::page_title() const noexcept

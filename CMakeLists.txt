@@ -11,6 +11,7 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 include(FetchContent)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 FetchContent_Declare(
     dear_imgui
@@ -30,12 +31,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(minhook)
 
-# Native hashes must remain in exactly the same order as generated native indices.
-# Pin the upstream file to a known YimMenuV2 revision instead of following a moving branch.
+# Native hashes and generated indices must come from the exact same upstream
+# revision. Pin both inputs so the handler table cannot silently drift.
 set(REAPERCORE_YIMMENU_REVISION "1715a64c1527bb8d2708febcde8f9dd2ff0b0b40")
-set(REAPERCORE_CROSSMAP_DIR "${CMAKE_BINARY_DIR}/generated/reapercore")
-set(REAPERCORE_CROSSMAP_FILE "${REAPERCORE_CROSSMAP_DIR}/reapercore_crossmap_upstream.hpp")
-file(MAKE_DIRECTORY "${REAPERCORE_CROSSMAP_DIR}")
+set(REAPERCORE_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/reapercore")
+set(REAPERCORE_CROSSMAP_FILE "${REAPERCORE_GENERATED_DIR}/reapercore_crossmap_upstream.hpp")
+set(REAPERCORE_NATIVES_JSON "${REAPERCORE_GENERATED_DIR}/natives_gen9.json")
+set(REAPERCORE_NATIVE_INDICES_FILE "${REAPERCORE_GENERATED_DIR}/reapercore_native_indices.hpp")
+file(MAKE_DIRECTORY "${REAPERCORE_GENERATED_DIR}")
 
 if(NOT EXISTS "${REAPERCORE_CROSSMAP_FILE}")
     file(DOWNLOAD
@@ -50,6 +53,57 @@ if(NOT EXISTS "${REAPERCORE_CROSSMAP_FILE}")
         message(FATAL_ERROR "Failed to download pinned GTA Enhanced crossmap: ${REAPERCORE_CROSSMAP_DOWNLOAD_MESSAGE}")
     endif()
 endif()
+
+if(NOT EXISTS "${REAPERCORE_NATIVES_JSON}")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/YimMenu/YimMenuV2/${REAPERCORE_YIMMENU_REVISION}/src/game/gta/invoker/natives_gen9.json"
+        "${REAPERCORE_NATIVES_JSON}"
+        STATUS REAPERCORE_NATIVES_DOWNLOAD_STATUS
+        TLS_VERIFY ON
+    )
+    list(GET REAPERCORE_NATIVES_DOWNLOAD_STATUS 0 REAPERCORE_NATIVES_DOWNLOAD_CODE)
+    if(NOT REAPERCORE_NATIVES_DOWNLOAD_CODE EQUAL 0)
+        list(GET REAPERCORE_NATIVES_DOWNLOAD_STATUS 1 REAPERCORE_NATIVES_DOWNLOAD_MESSAGE)
+        message(FATAL_ERROR "Failed to download pinned GTA Enhanced native definitions: ${REAPERCORE_NATIVES_DOWNLOAD_MESSAGE}")
+    endif()
+endif()
+
+execute_process(
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_native_indices.py"
+        "${REAPERCORE_NATIVES_JSON}"
+        "${REAPERCORE_NATIVE_INDICES_FILE}"
+    RESULT_VARIABLE REAPERCORE_NATIVE_GENERATOR_RESULT
+    OUTPUT_VARIABLE REAPERCORE_NATIVE_GENERATOR_OUTPUT
+    ERROR_VARIABLE REAPERCORE_NATIVE_GENERATOR_ERROR
+)
+if(NOT REAPERCORE_NATIVE_GENERATOR_RESULT EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to generate GTA native indices.\n"
+        "stdout: ${REAPERCORE_NATIVE_GENERATOR_OUTPUT}\n"
+        "stderr: ${REAPERCORE_NATIVE_GENERATOR_ERROR}")
+endif()
+
+# Verify the generated native definition count matches the crossmap hash count.
+# Crossmap.hpp contains one hexadecimal literal per ordered native entry.
+file(READ "${REAPERCORE_CROSSMAP_FILE}" REAPERCORE_CROSSMAP_TEXT)
+string(REGEX MATCHALL "0x[0-9A-Fa-f]+" REAPERCORE_CROSSMAP_HASHES "${REAPERCORE_CROSSMAP_TEXT}")
+list(LENGTH REAPERCORE_CROSSMAP_HASHES REAPERCORE_CROSSMAP_COUNT)
+
+file(READ "${REAPERCORE_NATIVE_INDICES_FILE}" REAPERCORE_NATIVE_INDICES_TEXT)
+string(REGEX MATCH "native_count = ([0-9]+)" REAPERCORE_NATIVE_COUNT_MATCH "${REAPERCORE_NATIVE_INDICES_TEXT}")
+if(NOT REAPERCORE_NATIVE_COUNT_MATCH)
+    message(FATAL_ERROR "Generated native index header does not contain native_count.")
+endif()
+set(REAPERCORE_NATIVE_COUNT "${CMAKE_MATCH_1}")
+
+if(NOT REAPERCORE_NATIVE_COUNT EQUAL REAPERCORE_CROSSMAP_COUNT)
+    message(FATAL_ERROR
+        "Pinned GTA native data is inconsistent: native definitions=${REAPERCORE_NATIVE_COUNT}, "
+        "crossmap hashes=${REAPERCORE_CROSSMAP_COUNT}")
+endif()
+message(STATUS "Validated ${REAPERCORE_NATIVE_COUNT} pinned GTA Enhanced native entries")
 
 add_library(ReaperCore_ImGui STATIC
     ${dear_imgui_SOURCE_DIR}/imgui.cpp
@@ -122,7 +176,7 @@ add_library(ReaperCore SHARED
 target_include_directories(ReaperCore
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${REAPERCORE_CROSSMAP_DIR}
+        ${REAPERCORE_GENERATED_DIR}
 )
 
 target_link_libraries(ReaperCore

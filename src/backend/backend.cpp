@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 #include <dxgi1_4.h>
+#include <imgui.h>
 #include <wrl/client.h>
 
 #include <atomic>
@@ -54,6 +55,7 @@ namespace reapercore
         std::atomic<ID3D12CommandQueue*> g_last_direct_queue{nullptr};
         std::atomic_bool g_present_observed{false};
         std::atomic_bool g_direct_queue_observed{false};
+        std::atomic_bool g_menu_input_capture{true};
         std::atomic<HWND> g_input_window{nullptr};
         std::atomic<WNDPROC> g_original_window_proc{nullptr};
         std::mutex g_present_render_mutex;
@@ -64,6 +66,7 @@ namespace reapercore
             switch (message)
             {
             case WM_MOUSEMOVE:
+            case WM_MOUSELEAVE:
             case WM_LBUTTONDOWN:
             case WM_LBUTTONUP:
             case WM_LBUTTONDBLCLK:
@@ -103,39 +106,103 @@ namespace reapercore
             }
         }
 
+        void apply_menu_input_capture_state() noexcept
+        {
+            if (g_render_backend == nullptr ||
+                !g_render_backend->imgui_backend().attached())
+            {
+                return;
+            }
+
+            const bool capture =
+                g_menu_input_capture.load(std::memory_order_acquire);
+
+            g_render_backend->imgui().make_current();
+            ImGui::GetIO().MouseDrawCursor = capture;
+
+            if (capture)
+            {
+                ReleaseCapture();
+                ClipCursor(nullptr);
+            }
+        }
+
+        void set_menu_input_capture(const bool capture) noexcept
+        {
+            const bool previous = g_menu_input_capture.exchange(
+                capture,
+                std::memory_order_acq_rel);
+            apply_menu_input_capture_state();
+
+            if (previous != capture && g_render_logging != nullptr)
+            {
+                g_render_logging->info(
+                    "input",
+                    capture
+                        ? "ReaperCore menu captured game input."
+                        : "ReaperCore menu released game input.");
+            }
+        }
+
         LRESULT CALLBACK render_window_proc(
             const HWND window,
             const UINT message,
             const WPARAM word_parameter,
             const LPARAM long_parameter)
         {
-            bool imgui_handled = false;
-            bool wants_mouse = false;
-            bool wants_keyboard = false;
-
             if (g_render_backend != nullptr &&
                 g_render_backend->imgui_backend().attached())
             {
-                imgui_handled = g_render_backend->handle_imgui_window_message(
+                const bool f5_pressed =
+                    (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+                    word_parameter == VK_F5 &&
+                    (static_cast<std::uint64_t>(long_parameter) & (1ULL << 30U)) == 0;
+
+                if (f5_pressed)
+                {
+                    set_menu_input_capture(
+                        !g_menu_input_capture.load(std::memory_order_acquire));
+                }
+
+                static_cast<void>(g_render_backend->handle_imgui_window_message(
                     window,
                     message,
                     word_parameter,
-                    long_parameter);
-                wants_mouse = g_render_backend->imgui().wants_mouse();
-                wants_keyboard = g_render_backend->imgui().wants_keyboard() ||
-                    g_render_backend->imgui().wants_text_input();
+                    long_parameter));
 
-                if (message == WM_INPUT && (wants_mouse || wants_keyboard))
+                const bool capture =
+                    g_menu_input_capture.load(std::memory_order_acquire);
+
+                if (f5_pressed)
                     return 0;
 
-                if (is_mouse_input_message(message) && wants_mouse)
-                    return 0;
+                if (capture)
+                {
+                    if (message == WM_INPUT)
+                    {
+                        if (GET_RAWINPUT_CODE_WPARAM(word_parameter) == RIM_INPUT)
+                        {
+                            static_cast<void>(DefWindowProcW(
+                                window,
+                                message,
+                                word_parameter,
+                                long_parameter));
+                        }
+                        return 0;
+                    }
 
-                if (is_keyboard_input_message(message) && wants_keyboard)
-                    return 0;
+                    if (is_mouse_input_message(message) ||
+                        is_keyboard_input_message(message))
+                    {
+                        return 0;
+                    }
 
-                if (imgui_handled && (wants_mouse || wants_keyboard))
-                    return 1;
+                    if (message == WM_SETCURSOR)
+                    {
+                        SetCursor(nullptr);
+                        return TRUE;
+                    }
+                }
             }
 
             const WNDPROC original =
@@ -500,6 +567,8 @@ namespace reapercore
                 return false;
             }
 
+            set_menu_input_capture(true);
+
             candidate.initialized = true;
             g_present_render_state = std::move(candidate);
 
@@ -529,6 +598,8 @@ namespace reapercore
             {
                 return false;
             }
+
+            apply_menu_input_capture_state();
 
             const UINT frame_index = state.swap_chain->GetCurrentBackBufferIndex();
             if (frame_index >= state.allocators.size() ||
@@ -679,6 +750,7 @@ namespace reapercore
         void reset_render_hook_state() noexcept
         {
             std::scoped_lock lock(g_present_render_mutex);
+            set_menu_input_capture(false);
             restore_input_window_proc();
             release_present_render_state(g_present_render_state);
             g_last_direct_queue.store(nullptr, std::memory_order_release);

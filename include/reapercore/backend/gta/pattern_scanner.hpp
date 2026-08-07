@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <vector>
 
@@ -23,4 +22,11 @@ namespace reapercore
         [[nodiscard]] std::optional<std::uintptr_t>
             find(std::string_view pattern) const noexcept;
 
-        [[nodiscard]] static
+    private:
+        [[nodiscard]] static std::optional<std::vector<Byte>>
+            parse(std::string_view pattern) noexcept;
+
+        std::uintptr_t m_base{};
+        std::size_t m_size{};
+    };
+}

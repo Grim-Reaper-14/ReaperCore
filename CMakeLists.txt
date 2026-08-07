@@ -21,6 +21,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dear_imgui)
 
+FetchContent_Declare(
+    minhook
+    GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
+    GIT_TAG v1.3.4
+    GIT_SHALLOW TRUE
+    GIT_PROGRESS TRUE
+)
+FetchContent_MakeAvailable(minhook)
+
 # Native hashes must remain in exactly the same order as the generated native
 # indices. Pin the upstream file to a known YimMenuV2 revision instead of
 # following a moving branch.
@@ -103,6 +112,7 @@ add_library(ReaperCore SHARED
     src/backend/gta/gta_runtime.cpp
     src/backend/gta/natives/native_manager.cpp
     src/backend/gta/pattern_scanner.cpp
+    src/backend/hooking/detour_hook.cpp
     src/backend/hooking/hook_registry.cpp
     src/backend/imgui/dx12_texture_registry.cpp
     src/backend/imgui/imgui_layer.cpp
@@ -119,6 +129,7 @@ target_include_directories(ReaperCore
 target_link_libraries(ReaperCore
     PRIVATE
         ReaperCore_ImGui
+        minhook
 )
 
 target_compile_features(ReaperCore PRIVATE cxx_std_20)

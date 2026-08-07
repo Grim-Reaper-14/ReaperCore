@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Windows.h>
 #include <imgui.h>
 
 #include <array>
 #include <cstdint>
-#include <string_view>
+#include <functional>
 
 namespace reapercore
 {
@@ -23,8 +24,21 @@ namespace reapercore
     class Menu final
     {
     public:
+        using Unload_Callback = std::function<void()>;
+
+        void set_unload_callback(Unload_Callback callback)
+        {
+            m_unload_callback = std::move(callback);
+        }
+
         void draw() noexcept
         {
+            if ((GetAsyncKeyState(VK_F5) & 1) != 0)
+                m_open = !m_open;
+
+            if (!m_open)
+                return;
+
             apply_default_style();
 
             ImGui::SetNextWindowSize(ImVec2(980.0F, 650.0F), ImGuiCond_FirstUseEver);
@@ -45,19 +59,16 @@ namespace reapercore
             draw_header();
             draw_body();
             draw_footer();
+            draw_unload_confirmation();
 
             ImGui::End();
         }
 
-        [[nodiscard]] Menu_Page page() const noexcept
-        {
-            return m_page;
-        }
+        [[nodiscard]] bool open() const noexcept { return m_open; }
+        void set_open(const bool open) noexcept { m_open = open; }
 
-        void set_page(const Menu_Page page) noexcept
-        {
-            m_page = page;
-        }
+        [[nodiscard]] Menu_Page page() const noexcept { return m_page; }
+        void set_page(const Menu_Page page) noexcept { m_page = page; }
 
     private:
         struct Navigation_Item final
@@ -88,14 +99,14 @@ namespace reapercore
             style.ItemSpacing = ImVec2(8.0F, 8.0F);
 
             auto* colors = style.Colors;
-            colors[ImGuiCol_WindowBg]       = ImVec4(0.027F, 0.039F, 0.059F, 1.00F);
-            colors[ImGuiCol_ChildBg]        = ImVec4(0.039F, 0.059F, 0.090F, 1.00F);
-            colors[ImGuiCol_Border]         = ImVec4(0.094F, 0.145F, 0.212F, 1.00F);
-            colors[ImGuiCol_Text]           = ImVec4(0.902F, 0.929F, 0.961F, 1.00F);
-            colors[ImGuiCol_TextDisabled]   = ImVec4(0.451F, 0.514F, 0.592F, 1.00F);
-            colors[ImGuiCol_Button]         = ImVec4(0.051F, 0.078F, 0.118F, 1.00F);
-            colors[ImGuiCol_ButtonHovered]  = ImVec4(0.078F, 0.235F, 0.420F, 1.00F);
-            colors[ImGuiCol_ButtonActive]   = ImVec4(0.137F, 0.553F, 1.000F, 1.00F);
+            colors[ImGuiCol_WindowBg]      = ImVec4(0.027F, 0.039F, 0.059F, 1.00F);
+            colors[ImGuiCol_ChildBg]       = ImVec4(0.039F, 0.059F, 0.090F, 1.00F);
+            colors[ImGuiCol_Border]        = ImVec4(0.094F, 0.145F, 0.212F, 1.00F);
+            colors[ImGuiCol_Text]          = ImVec4(0.902F, 0.929F, 0.961F, 1.00F);
+            colors[ImGuiCol_TextDisabled]  = ImVec4(0.451F, 0.514F, 0.592F, 1.00F);
+            colors[ImGuiCol_Button]        = ImVec4(0.051F, 0.078F, 0.118F, 1.00F);
+            colors[ImGuiCol_ButtonHovered] = ImVec4(0.078F, 0.235F, 0.420F, 1.00F);
+            colors[ImGuiCol_ButtonActive]  = ImVec4(0.137F, 0.553F, 1.000F, 1.00F);
         }
 
         void draw_header() noexcept
@@ -113,8 +124,6 @@ namespace reapercore
                 IM_COL32(3, 12, 23, 255),
                 IM_COL32(2, 6, 12, 255));
 
-            // Placeholder silhouette treatment until the image loader supplies
-            // the default evil Grim Reaper banner texture.
             const ImVec2 reaper_center(start.x + width - 105.0F, start.y + 67.0F);
             draw_list->AddCircleFilled(reaper_center, 42.0F, IM_COL32(4, 7, 12, 225));
             draw_list->AddTriangleFilled(
@@ -122,14 +131,8 @@ namespace reapercore
                 ImVec2(reaper_center.x + 60.0F, reaper_center.y + 48.0F),
                 ImVec2(reaper_center.x, reaper_center.y - 58.0F),
                 IM_COL32(5, 9, 15, 235));
-            draw_list->AddCircleFilled(
-                ImVec2(reaper_center.x - 13.0F, reaper_center.y - 2.0F),
-                4.0F,
-                IM_COL32(35, 141, 255, 255));
-            draw_list->AddCircleFilled(
-                ImVec2(reaper_center.x + 13.0F, reaper_center.y - 2.0F),
-                4.0F,
-                IM_COL32(35, 141, 255, 255));
+            draw_list->AddCircleFilled(ImVec2(reaper_center.x - 13.0F, reaper_center.y - 2.0F), 4.0F, IM_COL32(35, 141, 255, 255));
+            draw_list->AddCircleFilled(ImVec2(reaper_center.x + 13.0F, reaper_center.y - 2.0F), 4.0F, IM_COL32(35, 141, 255, 255));
 
             ImGui::SetCursorScreenPos(ImVec2(start.x + 28.0F, start.y + 31.0F));
             ImGui::TextColored(ImVec4(0.137F, 0.553F, 1.000F, 1.0F), "REAPERCORE");
@@ -146,11 +149,7 @@ namespace reapercore
             const float body_height = ImGui::GetContentRegionAvail().y - footer_height;
             constexpr float sidebar_width = 168.0F;
 
-            ImGui::BeginChild(
-                "##Sidebar",
-                ImVec2(sidebar_width, body_height),
-                ImGuiChildFlags_Borders);
-
+            ImGui::BeginChild("##Sidebar", ImVec2(sidebar_width, body_height), ImGuiChildFlags_Borders);
             ImGui::Dummy(ImVec2(0.0F, 10.0F));
             for (const auto& item : s_main_navigation)
                 sidebar_button(item);
@@ -158,48 +157,76 @@ namespace reapercore
             const float settings_y = ImGui::GetWindowHeight() - 58.0F;
             if (ImGui::GetCursorPosY() < settings_y)
                 ImGui::SetCursorPosY(settings_y);
-
             sidebar_button({Menu_Page::settings, "G", "Settings"});
             ImGui::EndChild();
 
             ImGui::SameLine(0.0F, 0.0F);
-
-            ImGui::BeginChild(
-                "##Content",
-                ImVec2(0.0F, body_height),
-                ImGuiChildFlags_Borders);
+            ImGui::BeginChild("##Content", ImVec2(0.0F, body_height), ImGuiChildFlags_Borders);
             ImGui::SetCursorPos(ImVec2(24.0F, 22.0F));
-            ImGui::TextColored(
-                ImVec4(0.137F, 0.553F, 1.000F, 1.0F),
-                "%s",
-                page_title());
+            ImGui::TextColored(ImVec4(0.137F, 0.553F, 1.000F, 1.0F), "%s", page_title());
             ImGui::SetCursorPosX(24.0F);
-            ImGui::TextDisabled("ReaperCore menu foundation - page content will be added here.");
+
+            if (m_page == Menu_Page::settings)
+                draw_settings_page();
+            else
+                ImGui::TextDisabled("ReaperCore menu foundation - page content will be added here.");
+
             ImGui::EndChild();
+        }
+
+        void draw_settings_page() noexcept
+        {
+            ImGui::TextDisabled("General, Appearance, Themes, Fonts, Images, and Style Editor will live here.");
+            ImGui::Dummy(ImVec2(0.0F, 24.0F));
+            ImGui::SeparatorText("System");
+            ImGui::TextDisabled("Unload ReaperCore and cleanly release hooks and renderer resources.");
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45F, 0.06F, 0.08F, 1.0F));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.65F, 0.08F, 0.11F, 1.0F));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.78F, 0.10F, 0.13F, 1.0F));
+            if (ImGui::Button("Unload ReaperCore", ImVec2(180.0F, 38.0F)))
+                ImGui::OpenPopup("Unload ReaperCore?");
+            ImGui::PopStyleColor(3);
+        }
+
+        void draw_unload_confirmation() noexcept
+        {
+            if (ImGui::BeginPopupModal("Unload ReaperCore?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::TextUnformatted("Are you sure you want to unload ReaperCore?");
+                ImGui::TextDisabled("Hooks, native callbacks, ImGui, and renderer resources will be shut down cleanly.");
+                ImGui::Separator();
+
+                if (ImGui::Button("Unload", ImVec2(120.0F, 0.0F)))
+                {
+                    ImGui::CloseCurrentPopup();
+                    if (m_unload_callback)
+                        m_unload_callback();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(120.0F, 0.0F)))
+                    ImGui::CloseCurrentPopup();
+
+                ImGui::EndPopup();
+            }
         }
 
         void draw_footer() noexcept
         {
-            ImGui::BeginChild(
-                "##Footer",
-                ImVec2(0.0F, 58.0F),
-                ImGuiChildFlags_Borders);
-
+            ImGui::BeginChild("##Footer", ImVec2(0.0F, 58.0F), ImGuiChildFlags_Borders);
             ImGui::SetCursorPos(ImVec2(18.0F, 12.0F));
             ImGui::TextColored(ImVec4(0.137F, 0.553F, 1.000F, 1.0F), "ReaperCore");
             ImGui::SameLine();
             ImGui::TextDisabled("- GTA Enhanced native framework - customizable - scriptable");
-
             ImGui::SetCursorPos(ImVec2(18.0F, 34.0F));
-            ImGui::TextDisabled("v0.3.0");
-
+            ImGui::TextDisabled("v0.3.0  |  F5: Toggle Menu");
             ImGui::EndChild();
         }
 
         void sidebar_button(const Navigation_Item& item) noexcept
         {
             const bool selected = m_page == item.page;
-
             ImGui::PushID(static_cast<int>(item.page));
             ImGui::SetCursorPosX(10.0F);
 
@@ -213,31 +240,17 @@ namespace reapercore
                     2.0F);
             }
 
-            if (ImGui::Selectable(
-                    "##nav",
-                    selected,
-                    0,
-                    ImVec2(ImGui::GetContentRegionAvail().x - 10.0F, 38.0F)))
-            {
+            if (ImGui::Selectable("##nav", selected, 0, ImVec2(ImGui::GetContentRegionAvail().x - 10.0F, 38.0F)))
                 m_page = item.page;
-            }
 
             const ImVec2 min = ImGui::GetItemRectMin();
-            const ImVec2 max = ImGui::GetItemRectMax();
-            const ImU32 icon_color = selected
-                ? IM_COL32(35, 141, 255, 255)
-                : IM_COL32(180, 194, 211, 255);
-            const ImU32 text_color = selected
-                ? IM_COL32(230, 237, 245, 255)
-                : IM_COL32(155, 170, 190, 255);
-
+            const ImU32 icon_color = selected ? IM_COL32(35, 141, 255, 255) : IM_COL32(180, 194, 211, 255);
+            const ImU32 text_color = selected ? IM_COL32(230, 237, 245, 255) : IM_COL32(155, 170, 190, 255);
             auto* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddText(ImVec2(min.x + 14.0F, min.y + 10.0F), icon_color, item.icon);
             draw_list->AddText(ImVec2(min.x + 42.0F, min.y + 10.0F), text_color, item.label);
-
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", item.label);
-
             ImGui::PopID();
         }
 
@@ -258,5 +271,7 @@ namespace reapercore
         }
 
         Menu_Page m_page{Menu_Page::home};
+        Unload_Callback m_unload_callback;
+        bool m_open{true};
     };
 }

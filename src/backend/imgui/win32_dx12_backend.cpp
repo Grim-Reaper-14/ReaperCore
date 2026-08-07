@@ -5,13 +5,8 @@
 #include <backends/imgui_impl_dx12.h>
 #include <backends/imgui_impl_win32.h>
 
+#include <Windows.h>
 #include <string>
-
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
-    HWND window,
-    UINT message,
-    WPARAM word_parameter,
-    LPARAM long_parameter);
 
 namespace reapercore
 {
@@ -89,6 +84,10 @@ namespace reapercore
             return false;
         }
 
+        // GTA owns the OS cursor/capture state. Keep Dear ImGui from changing
+        // the host cursor and feed mouse state explicitly from begin_frame().
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+
         m_attach_info = info;
 
         ImGui_ImplDX12_InitInfo dx12_info;
@@ -152,6 +151,27 @@ namespace reapercore
         m_layer->make_current();
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
+
+        // Poll mouse state instead of routing GTA mouse messages through
+        // ImGui_ImplWin32_WndProcHandler(). This keeps SetCapture(), raw input,
+        // and the game's own WndProc behavior completely under GTA's control.
+        auto& io = ImGui::GetIO();
+        POINT cursor{};
+        if (GetCursorPos(&cursor) &&
+            m_attach_info.window != nullptr &&
+            ScreenToClient(m_attach_info.window, &cursor))
+        {
+            io.AddMousePosEvent(
+                static_cast<float>(cursor.x),
+                static_cast<float>(cursor.y));
+        }
+
+        io.AddMouseButtonEvent(0, (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+        io.AddMouseButtonEvent(1, (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+        io.AddMouseButtonEvent(2, (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0);
+        io.AddMouseButtonEvent(3, (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0);
+        io.AddMouseButtonEvent(4, (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0);
+
         return m_layer->begin_frame();
     }
 
@@ -233,21 +253,15 @@ namespace reapercore
     }
 
     bool ImGui_Win32_DX12_Backend::handle_window_message(
-        const HWND window_handle,
-        const UINT message,
-        const WPARAM word_parameter,
-        const LPARAM long_parameter) noexcept
+        const HWND,
+        const UINT,
+        const WPARAM,
+        const LPARAM) noexcept
     {
-        std::scoped_lock lock(m_mutex);
-        if (!attached() || m_layer == nullptr)
-            return false;
-
-        m_layer->make_current();
-        return ImGui_ImplWin32_WndProcHandler(
-            window_handle,
-            message,
-            word_parameter,
-            long_parameter) != 0;
+        // Deliberately do not call ImGui_ImplWin32_WndProcHandler(). The stock
+        // handler can call SetCapture() on mouse-down, which conflicts with GTA
+        // even when the ReaperCore menu is hidden. Input is polled in begin_frame().
+        return false;
     }
 
     bool ImGui_Win32_DX12_Backend::initialized() const noexcept

@@ -55,7 +55,13 @@ namespace reapercore
         std::atomic<ID3D12CommandQueue*> g_last_direct_queue{nullptr};
         std::atomic_bool g_present_observed{false};
         std::atomic_bool g_direct_queue_observed{false};
-        std::atomic_bool g_menu_input_capture{true};
+        std::atomic_bool g_menu_input_capture{false};
+        std::atomic_bool g_first_begin_frame_logged{false};
+        std::atomic_bool g_first_begin_frame_success_logged{false};
+        std::atomic_bool g_first_render_frame_logged{false};
+        std::atomic_bool g_first_render_frame_success_logged{false};
+        std::atomic_bool g_first_submit_logged{false};
+        std::atomic_bool g_first_submit_success_logged{false};
         std::atomic<HWND> g_input_window{nullptr};
         std::atomic<WNDPROC> g_original_window_proc{nullptr};
         std::mutex g_present_render_mutex;
@@ -119,12 +125,6 @@ namespace reapercore
 
             g_render_backend->imgui().make_current();
             ImGui::GetIO().MouseDrawCursor = capture;
-
-            if (capture)
-            {
-                ReleaseCapture();
-                ClipCursor(nullptr);
-            }
         }
 
         void set_menu_input_capture(const bool capture) noexcept
@@ -554,18 +554,36 @@ namespace reapercore
             attach_info.dsv_format = DXGI_FORMAT_UNKNOWN;
             attach_info.srv_descriptor_capacity = 64;
 
+            g_render_logging->info(
+                "renderer",
+                "Beginning high-level ImGui Win32/DX12 attachment.");
             if (!g_render_backend->attach_imgui_dx12(attach_info))
             {
+                g_render_logging->error(
+                    "renderer",
+                    "High-level ImGui Win32/DX12 attachment failed.");
                 release_present_render_state(candidate);
                 return false;
             }
+            g_render_logging->info(
+                "renderer",
+                "High-level ImGui Win32/DX12 attachment completed.");
 
+            g_render_logging->info(
+                "renderer",
+                "Installing GTA window procedure for ImGui input.");
             if (!install_input_window_proc(description.OutputWindow))
             {
+                g_render_logging->error(
+                    "renderer",
+                    "GTA window procedure installation failed.");
                 g_render_backend->detach_imgui_dx12();
                 release_present_render_state(candidate);
                 return false;
             }
+            g_render_logging->info(
+                "renderer",
+                "GTA window procedure installation completed.");
 
             set_menu_input_capture(true);
 
@@ -599,8 +617,6 @@ namespace reapercore
                 return false;
             }
 
-            apply_menu_input_capture_state();
-
             const UINT frame_index = state.swap_chain->GetCurrentBackBufferIndex();
             if (frame_index >= state.allocators.size() ||
                 frame_index >= state.render_targets.size() ||
@@ -626,10 +642,23 @@ namespace reapercore
             if (FAILED(state.command_list->Reset(allocator, nullptr)))
                 return false;
 
+            const bool first_begin_log =
+                !g_first_begin_frame_logged.exchange(true, std::memory_order_acq_rel);
+            if (first_begin_log && g_render_logging != nullptr)
+                g_render_logging->info("renderer", "Entering first ImGui backend frame.");
+
             if (!g_render_backend->begin_imgui_frame())
             {
+                if (g_render_logging != nullptr)
+                    g_render_logging->error("renderer", "ImGui backend frame begin failed.");
                 state.command_list->Close();
                 return false;
+            }
+
+            if (!g_first_begin_frame_success_logged.exchange(true, std::memory_order_acq_rel) &&
+                g_render_logging != nullptr)
+            {
+                g_render_logging->info("renderer", "First ImGui backend frame began successfully.");
             }
 
             ImGui_DX12_Frame_Context frame;
@@ -641,17 +670,36 @@ namespace reapercore
             frame.transition_render_target = true;
             frame.bind_render_target = true;
 
+            if (!g_first_render_frame_logged.exchange(true, std::memory_order_acq_rel) &&
+                g_render_logging != nullptr)
+            {
+                g_render_logging->info("renderer", "Recording first ImGui DX12 frame.");
+            }
+
             if (!g_render_backend->render_imgui_frame(frame))
             {
+                if (g_render_logging != nullptr)
+                    g_render_logging->error("renderer", "ImGui DX12 frame recording failed.");
                 g_render_backend->imgui().cancel_frame();
                 state.command_list->Close();
                 return false;
+            }
+
+            if (!g_first_render_frame_success_logged.exchange(true, std::memory_order_acq_rel) &&
+                g_render_logging != nullptr)
+            {
+                g_render_logging->info("renderer", "First ImGui DX12 frame recorded successfully.");
             }
 
             if (FAILED(state.command_list->Close()))
                 return false;
 
             ID3D12CommandList* command_lists[] = {state.command_list.Get()};
+            if (!g_first_submit_logged.exchange(true, std::memory_order_acq_rel) &&
+                g_render_logging != nullptr)
+            {
+                g_render_logging->info("renderer", "Submitting first ImGui command list to GTA DX12 queue.");
+            }
             state.command_queue->ExecuteCommandLists(1, command_lists);
 
             const std::uint64_t fence_value = state.next_fence_value++;
@@ -659,6 +707,11 @@ namespace reapercore
                 return false;
 
             state.fence_values[frame_index] = fence_value;
+            if (!g_first_submit_success_logged.exchange(true, std::memory_order_acq_rel) &&
+                g_render_logging != nullptr)
+            {
+                g_render_logging->info("renderer", "First ImGui command list submitted successfully.");
+            }
             return true;
         }
 
@@ -756,6 +809,12 @@ namespace reapercore
             g_last_direct_queue.store(nullptr, std::memory_order_release);
             g_present_observed.store(false, std::memory_order_release);
             g_direct_queue_observed.store(false, std::memory_order_release);
+            g_first_begin_frame_logged.store(false, std::memory_order_release);
+            g_first_begin_frame_success_logged.store(false, std::memory_order_release);
+            g_first_render_frame_logged.store(false, std::memory_order_release);
+            g_first_render_frame_success_logged.store(false, std::memory_order_release);
+            g_first_submit_logged.store(false, std::memory_order_release);
+            g_first_submit_success_logged.store(false, std::memory_order_release);
             g_present_target = 0;
             g_execute_command_lists_target = 0;
             g_render_backend = nullptr;
@@ -923,11 +982,17 @@ namespace reapercore
             return false;
         }
 
+        if (m_logging != nullptr)
+            m_logging->info("imgui", "Attaching GTA DX12 descriptor services.");
+
         D3D12_Device_Attach_Info device_info;
         device_info.device = info.device;
         device_info.srv_descriptor_capacity = info.srv_descriptor_capacity;
         if (!m_d3d12.attach_device(device_info))
             return false;
+
+        if (m_logging != nullptr)
+            m_logging->info("imgui", "GTA DX12 descriptor services attached.");
 
         m_imgui_owns_d3d12_attachment = !device_was_attached;
         auto& descriptors = m_d3d12.srv_descriptors();
@@ -944,13 +1009,21 @@ namespace reapercore
         backend_info.allocate_srv_descriptor = &D3D12_Srv_Descriptor_Allocator::imgui_allocate;
         backend_info.free_srv_descriptor = &D3D12_Srv_Descriptor_Allocator::imgui_release;
 
+        if (m_logging != nullptr)
+            m_logging->info("imgui", "Calling Dear ImGui Win32/DX12 backend attach.");
+
         if (!m_imgui_backend.attach(backend_info))
         {
+            if (m_logging != nullptr)
+                m_logging->error("imgui", "Dear ImGui Win32/DX12 backend attach returned failure.");
             if (m_imgui_owns_d3d12_attachment)
                 m_d3d12.detach_device();
             m_imgui_owns_d3d12_attachment = false;
             return false;
         }
+
+        if (m_logging != nullptr)
+            m_logging->info("imgui", "Dear ImGui Win32/DX12 backend attach returned successfully.");
 
         if (m_logging != nullptr)
             m_logging->info("imgui", "High-level ImGui DX12 bridge attached.", {

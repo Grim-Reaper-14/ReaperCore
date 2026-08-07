@@ -1,14 +1,19 @@
 #include "reapercore/backend/gta/gta_runtime.hpp"
+#include "reapercore/backend/gta/game_thread_hook.hpp"
 #include "reapercore/core/logging/logging_manager.hpp"
 
 #include <Windows.h>
 
+#include <atomic>
 #include <string>
 
 namespace reapercore
 {
     namespace
     {
+        Game_Thread_Hook g_game_thread_hook;
+        std::atomic_bool g_logged_script_context{false};
+
         [[nodiscard]] bool inspect_module(
             HMODULE module,
             std::uintptr_t& base,
@@ -101,13 +106,38 @@ namespace reapercore
             return false;
         }
 
+        g_logged_script_context.store(false, std::memory_order_release);
+        if (!g_game_thread_hook.initialize(
+                logging,
+                m_pointers,
+                [&logging]() noexcept {
+                    if (!g_logged_script_context.exchange(true, std::memory_order_acq_rel))
+                    {
+                        logging.info(
+                            "gta.script",
+                            "ReaperCore entered a GTA script-thread TLS context successfully.");
+                    }
+                }))
+        {
+            logging.error("gta", "GTA runtime initialization stopped because the game-thread hook could not be installed.");
+            g_game_thread_hook.shutdown();
+            m_natives.shutdown();
+            m_pointers.shutdown();
+            m_module_size = 0;
+            m_module_base = 0;
+            m_logging = nullptr;
+            return false;
+        }
+
         m_initialized = true;
-        logging.info("gta", "GTA Enhanced runtime and native handler cache are ready.");
+        logging.info("gta", "GTA Enhanced runtime, native handler cache, and script-thread hook are ready.");
         return true;
     }
 
     void GTA_Runtime::shutdown() noexcept
     {
+        g_game_thread_hook.shutdown();
+        g_logged_script_context.store(false, std::memory_order_release);
         m_natives.shutdown();
         m_pointers.shutdown();
 
@@ -128,6 +158,7 @@ namespace reapercore
     bool GTA_Runtime::ready_for_natives() const noexcept
     {
         return m_initialized &&
+            g_game_thread_hook.installed() &&
             m_pointers.ready_for_natives() &&
             m_natives.handlers_cached();
     }

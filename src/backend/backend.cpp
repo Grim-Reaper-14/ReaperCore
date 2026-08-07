@@ -150,59 +150,18 @@ namespace reapercore
             const WPARAM word_parameter,
             const LPARAM long_parameter)
         {
+            // Feed every message to Dear ImGui, but never consume GTA's Win32
+            // or raw-input stream here. GTA's front-end and gameplay input
+            // state must remain owned by the game; control suppression belongs
+            // at the GTA control layer instead of the window procedure.
             if (g_render_backend != nullptr &&
                 g_render_backend->imgui_backend().attached())
             {
-                const bool f5_pressed =
-                    (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-                    word_parameter == VK_F5 &&
-                    (static_cast<std::uint64_t>(long_parameter) & (1ULL << 30U)) == 0;
-
-                if (f5_pressed)
-                {
-                    set_menu_input_capture(
-                        !g_menu_input_capture.load(std::memory_order_acquire));
-                }
-
                 static_cast<void>(g_render_backend->handle_imgui_window_message(
                     window,
                     message,
                     word_parameter,
                     long_parameter));
-
-                const bool capture =
-                    g_menu_input_capture.load(std::memory_order_acquire);
-
-                if (f5_pressed)
-                    return 0;
-
-                if (capture)
-                {
-                    if (message == WM_INPUT)
-                    {
-                        if (GET_RAWINPUT_CODE_WPARAM(word_parameter) == RIM_INPUT)
-                        {
-                            static_cast<void>(DefWindowProcW(
-                                window,
-                                message,
-                                word_parameter,
-                                long_parameter));
-                        }
-                        return 0;
-                    }
-
-                    if (is_mouse_input_message(message) ||
-                        is_keyboard_input_message(message))
-                    {
-                        return 0;
-                    }
-
-                    if (message == WM_SETCURSOR)
-                    {
-                        SetCursor(nullptr);
-                        return TRUE;
-                    }
-                }
             }
 
             const WNDPROC original =
@@ -306,7 +265,7 @@ namespace reapercore
             if (g_render_logging != nullptr)
                 g_render_logging->info(
                     "input",
-                    "GTA window procedure subclassed for ImGui input capture.");
+                    "GTA window procedure subclassed for ImGui input forwarding.");
             return true;
         }
 
@@ -585,7 +544,10 @@ namespace reapercore
                 "renderer",
                 "GTA window procedure installation completed.");
 
-            set_menu_input_capture(true);
+            // Do not capture GTA input at the Win32 layer. The frontend remains
+            // responsible for menu visibility while the WndProc only forwards
+            // messages to ImGui for observation.
+            set_menu_input_capture(false);
 
             candidate.initialized = true;
             g_present_render_state = std::move(candidate);

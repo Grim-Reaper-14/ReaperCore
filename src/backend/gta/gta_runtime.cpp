@@ -90,13 +90,25 @@ namespace reapercore
             return false;
         }
 
+        if (!m_natives.initialize(logging, m_pointers))
+        {
+            logging.error("gta", "GTA runtime initialization stopped because native handlers could not be cached.");
+            m_natives.shutdown();
+            m_pointers.shutdown();
+            m_module_size = 0;
+            m_module_base = 0;
+            m_logging = nullptr;
+            return false;
+        }
+
         m_initialized = true;
-        logging.info("gta", "GTA Enhanced runtime is ready for native subsystem initialization.");
+        logging.info("gta", "GTA Enhanced runtime and native handler cache are ready.");
         return true;
     }
 
     void GTA_Runtime::shutdown() noexcept
     {
+        m_natives.shutdown();
         m_pointers.shutdown();
 
         if (m_initialized && m_logging != nullptr)
@@ -115,7 +127,9 @@ namespace reapercore
 
     bool GTA_Runtime::ready_for_natives() const noexcept
     {
-        return m_initialized && m_pointers.ready_for_natives();
+        return m_initialized &&
+            m_pointers.ready_for_natives() &&
+            m_natives.handlers_cached();
     }
 
     std::uintptr_t GTA_Runtime::module_base() const noexcept
@@ -136,5 +150,15 @@ namespace reapercore
     const GTA_Pointers& GTA_Runtime::pointers() const noexcept
     {
         return m_pointers;
+    }
+
+    Native_Manager& GTA_Runtime::natives() noexcept
+    {
+        return m_natives;
+    }
+
+    const Native_Manager& GTA_Runtime::natives() const noexcept
+    {
+        return m_natives;
     }
 }

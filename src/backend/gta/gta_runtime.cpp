@@ -1,6 +1,8 @@
 #include "reapercore/backend/gta/gta_runtime.hpp"
 #include "reapercore/backend/gta/game_thread_hook.hpp"
+#include "reapercore/backend/gta/natives/native_invoker.hpp"
 #include "reapercore/core/logging/logging_manager.hpp"
+#include "reapercore_native_indices.hpp"
 
 #include <Windows.h>
 
@@ -12,7 +14,7 @@ namespace reapercore
     namespace
     {
         Game_Thread_Hook g_game_thread_hook;
-        std::atomic_bool g_logged_script_context{false};
+        std::atomic_bool g_ran_native_smoke_test{false};
 
         [[nodiscard]] bool inspect_module(
             HMODULE module,
@@ -106,17 +108,45 @@ namespace reapercore
             return false;
         }
 
-        g_logged_script_context.store(false, std::memory_order_release);
+        g_ran_native_smoke_test.store(false, std::memory_order_release);
         if (!g_game_thread_hook.initialize(
                 logging,
                 m_pointers,
-                [&logging]() noexcept {
-                    if (!g_logged_script_context.exchange(true, std::memory_order_acq_rel))
+                [this, &logging]() noexcept {
+                    if (g_ran_native_smoke_test.exchange(true, std::memory_order_acq_rel))
+                        return;
+
+                    logging.info(
+                        "gta.script",
+                        "ReaperCore entered a GTA script-thread TLS context successfully.");
+
+                    Native_Invoker invoker(m_natives);
+                    const auto player_id = invoker.invoke<int>(
+                        generated_natives::player_id,
+                        false);
+                    const auto player_ped_id = invoker.invoke<int>(
+                        generated_natives::player_ped_id,
+                        false);
+                    const auto game_timer = invoker.invoke<int>(
+                        generated_natives::get_game_timer,
+                        false);
+
+                    if (!player_id || !player_ped_id || !game_timer)
                     {
-                        logging.info(
-                            "gta.script",
-                            "ReaperCore entered a GTA script-thread TLS context successfully.");
+                        logging.error(
+                            "gta.natives",
+                            "GTA native smoke test failed: one or more handlers could not be invoked.");
+                        return;
                     }
+
+                    logging.info(
+                        "gta.natives",
+                        "GTA native smoke test succeeded.",
+                        {
+                            {"player_id", std::to_string(*player_id)},
+                            {"player_ped_id", std::to_string(*player_ped_id)},
+                            {"game_timer", std::to_string(*game_timer)}
+                        });
                 }))
         {
             logging.error("gta", "GTA runtime initialization stopped because the game-thread hook could not be installed.");
@@ -137,7 +167,7 @@ namespace reapercore
     void GTA_Runtime::shutdown() noexcept
     {
         g_game_thread_hook.shutdown();
-        g_logged_script_context.store(false, std::memory_order_release);
+        g_ran_native_smoke_test.store(false, std::memory_order_release);
         m_natives.shutdown();
         m_pointers.shutdown();
 

@@ -188,6 +188,16 @@ add_library(ReaperCore SHARED
     src/backend/imgui/imgui_layer.cpp
     src/backend/imgui/win32_dx12_backend.cpp
     src/backend/renderer/renderer.cpp
+    src/frontend/frontend.cpp
+    src/frontend/menu/menu.cpp
+    src/frontend/menu/pages/home_page.cpp
+    src/frontend/menu/pages/self_page.cpp
+    src/frontend/menu/pages/vehicle_page.cpp
+    src/frontend/menu/pages/world_page.cpp
+    src/frontend/menu/pages/network_page.cpp
+    src/frontend/menu/pages/scripts_page.cpp
+    src/frontend/menu/pages/misc_page.cpp
+    src/frontend/menu/pages/settings_page.cpp
 )
 
 target_include_directories(ReaperCore

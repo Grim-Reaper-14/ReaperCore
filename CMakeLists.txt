@@ -38,7 +38,24 @@ set(REAPERCORE_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/reapercore")
 set(REAPERCORE_CROSSMAP_FILE "${REAPERCORE_GENERATED_DIR}/reapercore_crossmap_upstream.hpp")
 set(REAPERCORE_NATIVES_JSON "${REAPERCORE_GENERATED_DIR}/natives_gen9.json")
 set(REAPERCORE_NATIVE_INDICES_FILE "${REAPERCORE_GENERATED_DIR}/reapercore_native_indices.hpp")
+set(REAPERCORE_CROSSMAP_COMPAT_DIR "${REAPERCORE_GENERATED_DIR}/types/script")
+set(REAPERCORE_CROSSMAP_COMPAT_FILE "${REAPERCORE_CROSSMAP_COMPAT_DIR}/scrNativeHandler.hpp")
 file(MAKE_DIRECTORY "${REAPERCORE_GENERATED_DIR}")
+file(MAKE_DIRECTORY "${REAPERCORE_CROSSMAP_COMPAT_DIR}")
+
+# The pinned YimMenuV2 Crossmap.hpp only needs scrNativeHash from its
+# scrNativeHandler header, plus std::array. Keep that dependency local and
+# minimal instead of importing YimMenu's full script type hierarchy.
+file(WRITE "${REAPERCORE_CROSSMAP_COMPAT_FILE}" [=[#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace rage
+{
+    using scrNativeHash = std::uint64_t;
+}
+]=])
 
 if(NOT EXISTS "${REAPERCORE_CROSSMAP_FILE}")
     file(DOWNLOAD

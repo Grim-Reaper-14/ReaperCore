@@ -46,18 +46,17 @@ namespace reapercore
 
         m_device = info.device;
 
-        if (!m_command_queue.initialize(*m_logging, *m_device.Get()) ||
-            !m_fence.initialize(*m_logging, *m_device.Get()) ||
-            !m_frame_resources.initialize(*m_logging, *m_device.Get(), info.frame_count) ||
-            !m_srv_descriptors.initialize(
+        // GTA owns the graphics queue and the Present renderer owns the overlay
+        // allocators, command list, and fence. The high-level attachment only
+        // needs the game's device plus a shader-visible SRV heap for ImGui and
+        // frontend textures. Creating a second execution stack here is both
+        // redundant and unsafe inside the injected render path.
+        if (!m_srv_descriptors.initialize(
                 *m_logging,
                 *m_device.Get(),
                 info.srv_descriptor_capacity))
         {
             m_srv_descriptors.shutdown();
-            m_frame_resources.shutdown();
-            m_fence.shutdown();
-            m_command_queue.shutdown();
             m_device.Reset();
             m_state.store(D3D12_Backend_State::failed, std::memory_order_release);
             return false;
@@ -65,9 +64,8 @@ namespace reapercore
 
         m_frame_open.store(false, std::memory_order_release);
         m_device_attached.store(true, std::memory_order_release);
-        m_logging->info("d3d12", "DX12 execution backend attached.", {
-            {"srv_descriptor_capacity", std::to_string(info.srv_descriptor_capacity)},
-            {"frame_count", std::to_string(info.frame_count)}
+        m_logging->info("d3d12", "DX12 external device attached for descriptor services.", {
+            {"srv_descriptor_capacity", std::to_string(info.srv_descriptor_capacity)}
         });
         return true;
     }

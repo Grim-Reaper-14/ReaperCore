@@ -5,6 +5,7 @@
 #include "reapercore/core/logging/logging_manager.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -12,15 +13,21 @@ namespace reapercore
 {
     namespace
     {
-        // Minimal prefix of rage::scrProgram required by InitNativeTables.
-        // The native entrypoint table is populated in-place by the game.
+        // Minimal rage::scrProgram layout required by InitNativeTables.
+        // Verified against the pinned YimMenuV2 scrProgram layout:
+        // m_NativeCount at 0x2C and m_NativeEntrypoints at 0x40.
         struct Native_Table_Program final
         {
-            std::uint8_t padding_00[0x40]{};
-            std::uint32_t native_count{};          // 0x40
-            std::uint32_t padding_44{};
-            Native_Handler* native_entrypoints{}; // 0x48
+            std::uint8_t padding_00[0x2C]{};
+            std::uint32_t native_count{};          // 0x2C
+            std::uint8_t padding_30[0x10]{};
+            Native_Handler* native_entrypoints{}; // 0x40
+            std::uint8_t padding_48[0x38]{};
         };
+
+        static_assert(offsetof(Native_Table_Program, native_count) == 0x2C);
+        static_assert(offsetof(Native_Table_Program, native_entrypoints) == 0x40);
+        static_assert(sizeof(Native_Table_Program) == 0x80);
 
         using Init_Native_Tables = void (*)(Native_Table_Program*);
     }
@@ -71,7 +78,7 @@ namespace reapercore
         return m_handlers.size();
     }
 
-    Native_Handler Native_Manager::handler(std::size_t index) const noexcept
+    Native_Handler Native_Manager::handler(const std::size_t index) const noexcept
     {
         if (!m_handlers_cached || index >= m_handlers.size())
             return nullptr;

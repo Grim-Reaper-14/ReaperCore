@@ -1,5 +1,6 @@
 #include "reapercore/core/core/core.hpp"
 #include "reapercore/core/events/engine_events.hpp"
+#include "reapercore/frontend/frontend.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -7,6 +8,8 @@
 
 namespace
 {
+    reapercore::Frontend g_frontend;
+
     std::size_t bounded_size(
         const int value,
         const int minimum,
@@ -115,6 +118,21 @@ namespace reapercore
             return false;
         }
 
+        if (!g_frontend.initialize(
+                m_logging,
+                m_backend,
+                [this]() noexcept {
+                    m_backend.request_stop();
+                }))
+        {
+            m_logging.error("core", "Frontend failed to initialize.");
+            m_backend.shutdown();
+            m_lua.shutdown();
+            m_tasks.shutdown();
+            m_logging.shutdown();
+            return false;
+        }
+
         m_initialized = true;
         m_events.publish(Application_Started_Event{});
         m_logging.info("core", "Core initialized.", {
@@ -137,6 +155,7 @@ namespace reapercore
             return;
 
         m_events.publish(Application_Stopping_Event{});
+        g_frontend.shutdown();
         m_backend.shutdown();
         m_tasks.shutdown();
         m_events.process_deferred();

@@ -54,8 +54,194 @@ namespace reapercore
         std::atomic<ID3D12CommandQueue*> g_last_direct_queue{nullptr};
         std::atomic_bool g_present_observed{false};
         std::atomic_bool g_direct_queue_observed{false};
+        std::atomic<HWND> g_input_window{nullptr};
+        std::atomic<WNDPROC> g_original_window_proc{nullptr};
         std::mutex g_present_render_mutex;
         Present_Render_State g_present_render_state;
+
+        bool is_mouse_input_message(const UINT message) noexcept
+        {
+            switch (message)
+            {
+            case WM_MOUSEMOVE:
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONUP:
+            case WM_LBUTTONDBLCLK:
+            case WM_RBUTTONDOWN:
+            case WM_RBUTTONUP:
+            case WM_RBUTTONDBLCLK:
+            case WM_MBUTTONDOWN:
+            case WM_MBUTTONUP:
+            case WM_MBUTTONDBLCLK:
+            case WM_XBUTTONDOWN:
+            case WM_XBUTTONUP:
+            case WM_XBUTTONDBLCLK:
+            case WM_MOUSEWHEEL:
+            case WM_MOUSEHWHEEL:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool is_keyboard_input_message(const UINT message) noexcept
+        {
+            switch (message)
+            {
+            case WM_KEYDOWN:
+            case WM_KEYUP:
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
+            case WM_CHAR:
+            case WM_DEADCHAR:
+            case WM_SYSCHAR:
+            case WM_SYSDEADCHAR:
+            case WM_UNICHAR:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        LRESULT CALLBACK render_window_proc(
+            const HWND window,
+            const UINT message,
+            const WPARAM word_parameter,
+            const LPARAM long_parameter)
+        {
+            bool imgui_handled = false;
+            bool wants_mouse = false;
+            bool wants_keyboard = false;
+
+            if (g_render_backend != nullptr &&
+                g_render_backend->imgui_backend().attached())
+            {
+                imgui_handled = g_render_backend->handle_imgui_window_message(
+                    window,
+                    message,
+                    word_parameter,
+                    long_parameter);
+                wants_mouse = g_render_backend->imgui().wants_mouse();
+                wants_keyboard = g_render_backend->imgui().wants_keyboard() ||
+                    g_render_backend->imgui().wants_text_input();
+
+                if (message == WM_INPUT && (wants_mouse || wants_keyboard))
+                    return 0;
+
+                if (is_mouse_input_message(message) && wants_mouse)
+                    return 0;
+
+                if (is_keyboard_input_message(message) && wants_keyboard)
+                    return 0;
+
+                if (imgui_handled && (wants_mouse || wants_keyboard))
+                    return 1;
+            }
+
+            const WNDPROC original =
+                g_original_window_proc.load(std::memory_order_acquire);
+            return original != nullptr
+                ? CallWindowProcW(
+                    original,
+                    window,
+                    message,
+                    word_parameter,
+                    long_parameter)
+                : DefWindowProcW(
+                    window,
+                    message,
+                    word_parameter,
+                    long_parameter);
+        }
+
+        void restore_input_window_proc() noexcept
+        {
+            const HWND window = g_input_window.exchange(
+                nullptr,
+                std::memory_order_acq_rel);
+            const WNDPROC original = g_original_window_proc.exchange(
+                nullptr,
+                std::memory_order_acq_rel);
+
+            if (window == nullptr || original == nullptr || !IsWindow(window))
+                return;
+
+            const auto current = reinterpret_cast<WNDPROC>(
+                GetWindowLongPtrW(window, GWLP_WNDPROC));
+            if (current == &render_window_proc)
+            {
+                SetLastError(ERROR_SUCCESS);
+                const LONG_PTR result = SetWindowLongPtrW(
+                    window,
+                    GWLP_WNDPROC,
+                    reinterpret_cast<LONG_PTR>(original));
+                if (result == 0 && GetLastError() != ERROR_SUCCESS)
+                {
+                    if (g_render_logging != nullptr)
+                        g_render_logging->error(
+                            "input",
+                            "Failed to restore GTA window procedure.", {
+                                {"error", std::to_string(GetLastError())}
+                            });
+                    return;
+                }
+            }
+
+            if (g_render_logging != nullptr)
+                g_render_logging->info("input", "GTA window procedure restored.");
+        }
+
+        bool install_input_window_proc(const HWND window) noexcept
+        {
+            if (window == nullptr || !IsWindow(window))
+                return false;
+
+            const HWND current_window =
+                g_input_window.load(std::memory_order_acquire);
+            if (current_window == window &&
+                g_original_window_proc.load(std::memory_order_acquire) != nullptr)
+            {
+                return true;
+            }
+
+            if (current_window != nullptr)
+                restore_input_window_proc();
+
+            SetLastError(ERROR_SUCCESS);
+            const LONG_PTR previous = SetWindowLongPtrW(
+                window,
+                GWLP_WNDPROC,
+                reinterpret_cast<LONG_PTR>(&render_window_proc));
+            if (previous == 0 && GetLastError() != ERROR_SUCCESS)
+            {
+                if (g_render_logging != nullptr)
+                    g_render_logging->error(
+                        "input",
+                        "Failed to subclass GTA window procedure.", {
+                            {"error", std::to_string(GetLastError())}
+                        });
+                return false;
+            }
+
+            const auto original = reinterpret_cast<WNDPROC>(previous);
+            if (original == nullptr)
+            {
+                if (g_render_logging != nullptr)
+                    g_render_logging->error(
+                        "input",
+                        "GTA window procedure was unexpectedly null.");
+                return false;
+            }
+
+            g_original_window_proc.store(original, std::memory_order_release);
+            g_input_window.store(window, std::memory_order_release);
+
+            if (g_render_logging != nullptr)
+                g_render_logging->info(
+                    "input",
+                    "GTA window procedure subclassed for ImGui input capture.");
+            return true;
+        }
 
         void release_present_render_state(Present_Render_State& state) noexcept
         {
@@ -307,6 +493,13 @@ namespace reapercore
                 return false;
             }
 
+            if (!install_input_window_proc(description.OutputWindow))
+            {
+                g_render_backend->detach_imgui_dx12();
+                release_present_render_state(candidate);
+                return false;
+            }
+
             candidate.initialized = true;
             g_present_render_state = std::move(candidate);
 
@@ -486,6 +679,7 @@ namespace reapercore
         void reset_render_hook_state() noexcept
         {
             std::scoped_lock lock(g_present_render_mutex);
+            restore_input_window_proc();
             release_present_render_state(g_present_render_state);
             g_last_direct_queue.store(nullptr, std::memory_order_release);
             g_present_observed.store(false, std::memory_order_release);

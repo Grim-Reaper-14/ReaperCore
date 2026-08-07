@@ -21,6 +21,28 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dear_imgui)
 
+# Native hashes must remain in exactly the same order as the generated native
+# indices. Pin the upstream file to a known YimMenuV2 revision instead of
+# following a moving branch.
+set(REAPERCORE_YIMMENU_REVISION "1715a64c1527bb8d2708febcde8f9dd2ff0b0b40")
+set(REAPERCORE_CROSSMAP_DIR "${CMAKE_BINARY_DIR}/generated/reapercore")
+set(REAPERCORE_CROSSMAP_FILE "${REAPERCORE_CROSSMAP_DIR}/reapercore_crossmap_upstream.hpp")
+file(MAKE_DIRECTORY "${REAPERCORE_CROSSMAP_DIR}")
+
+if(NOT EXISTS "${REAPERCORE_CROSSMAP_FILE}")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/YimMenu/YimMenuV2/${REAPERCORE_YIMMENU_REVISION}/src/game/gta/invoker/Crossmap.hpp"
+        "${REAPERCORE_CROSSMAP_FILE}"
+        STATUS REAPERCORE_CROSSMAP_DOWNLOAD_STATUS
+        TLS_VERIFY ON
+    )
+    list(GET REAPERCORE_CROSSMAP_DOWNLOAD_STATUS 0 REAPERCORE_CROSSMAP_DOWNLOAD_CODE)
+    if(NOT REAPERCORE_CROSSMAP_DOWNLOAD_CODE EQUAL 0)
+        list(GET REAPERCORE_CROSSMAP_DOWNLOAD_STATUS 1 REAPERCORE_CROSSMAP_DOWNLOAD_MESSAGE)
+        message(FATAL_ERROR "Failed to download pinned GTA Enhanced crossmap: ${REAPERCORE_CROSSMAP_DOWNLOAD_MESSAGE}")
+    endif()
+endif()
+
 add_library(ReaperCore_ImGui STATIC
     ${dear_imgui_SOURCE_DIR}/imgui.cpp
     ${dear_imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -90,6 +112,7 @@ add_library(ReaperCore SHARED
 target_include_directories(ReaperCore
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${REAPERCORE_CROSSMAP_DIR}
 )
 
 target_link_libraries(ReaperCore

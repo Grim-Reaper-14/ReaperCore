@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reapercore/backend/gta/gta_pointers.hpp"
+#include "reapercore/backend/gta/natives/native_manager.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,10 +22,13 @@ namespace reapercore
         [[nodiscard]] std::size_t module_size() const noexcept;
         [[nodiscard]] GTA_Pointers& pointers() noexcept;
         [[nodiscard]] const GTA_Pointers& pointers() const noexcept;
+        [[nodiscard]] Native_Manager& natives() noexcept;
+        [[nodiscard]] const Native_Manager& natives() const noexcept;
 
     private:
         Logging_Manager* m_logging{};
         GTA_Pointers m_pointers;
+        Native_Manager m_natives;
         std::uintptr_t m_module_base{};
         std::size_t m_module_size{};
         bool m_initialized{};

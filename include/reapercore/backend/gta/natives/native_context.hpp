@@ -15,6 +15,8 @@ namespace reapercore
         float z{};
     };
 
+    struct Native_Call_Context_Layout;
+
     class Native_Call_Context
     {
     public:
@@ -78,6 +80,8 @@ namespace reapercore
         }
 
     protected:
+        friend struct Native_Call_Context_Layout;
+
         void* m_return_value{};                              // 0x00
         std::uint32_t m_argument_count{};                    // 0x08
         std::uint32_t m_padding_0C{};                        // 0x0C
@@ -86,18 +90,33 @@ namespace reapercore
         std::uint32_t m_padding_1C{};                        // 0x1C
         Native_Vector3* m_vector_reference_targets[4]{};     // 0x20
         Native_Vector3 m_vector_reference_sources[4]{};      // 0x40
-
-    private:
         std::array<std::uint64_t, 10> m_return_stack{};
         std::array<std::uint64_t, 40> m_argument_stack{};
     };
 
-    static_assert(offsetof(Native_Call_Context, m_return_value) == 0x00);
-    static_assert(offsetof(Native_Call_Context, m_argument_count) == 0x08);
-    static_assert(offsetof(Native_Call_Context, m_arguments) == 0x10);
-    static_assert(offsetof(Native_Call_Context, m_vector_reference_count) == 0x18);
-    static_assert(offsetof(Native_Call_Context, m_vector_reference_targets) == 0x20);
-    static_assert(offsetof(Native_Call_Context, m_vector_reference_sources) == 0x40);
+    struct Native_Call_Context_Layout final
+    {
+        static constexpr std::size_t return_value =
+            offsetof(Native_Call_Context, m_return_value);
+        static constexpr std::size_t argument_count =
+            offsetof(Native_Call_Context, m_argument_count);
+        static constexpr std::size_t arguments =
+            offsetof(Native_Call_Context, m_arguments);
+        static constexpr std::size_t vector_reference_count =
+            offsetof(Native_Call_Context, m_vector_reference_count);
+        static constexpr std::size_t vector_reference_targets =
+            offsetof(Native_Call_Context, m_vector_reference_targets);
+        static constexpr std::size_t vector_reference_sources =
+            offsetof(Native_Call_Context, m_vector_reference_sources);
+    };
+
+    static_assert(std::is_standard_layout_v<Native_Call_Context>);
+    static_assert(Native_Call_Context_Layout::return_value == 0x00);
+    static_assert(Native_Call_Context_Layout::argument_count == 0x08);
+    static_assert(Native_Call_Context_Layout::arguments == 0x10);
+    static_assert(Native_Call_Context_Layout::vector_reference_count == 0x18);
+    static_assert(Native_Call_Context_Layout::vector_reference_targets == 0x20);
+    static_assert(Native_Call_Context_Layout::vector_reference_sources == 0x40);
 
     using Native_Hash = std::uint64_t;
     using Native_Handler = void (*)(Native_Call_Context*);
